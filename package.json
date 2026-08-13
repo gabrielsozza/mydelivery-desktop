@@ -22,7 +22,7 @@
     "files": ["main.js", "preload.js", "print.js", "build/**/*"],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "artifactName": "MyDelivery-Setup-${version}.${ext}"
+      "artifactName": "MyDelivery-Setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -34,7 +34,7 @@
     "mac": {
       "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
       "category": "public.app-category.business",
-      "artifactName": "MyDelivery-${version}-${arch}.${ext}"
+      "artifactName": "MyDelivery-mac-${arch}.${ext}"
     },
     "dmg": { "title": "MyDelivery" }
   }

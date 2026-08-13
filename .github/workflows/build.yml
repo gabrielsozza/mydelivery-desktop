@@ -1,12 +1,17 @@
 # Gera os instaladores automaticamente na nuvem (grátis) — você está no Mac,
 # então o .exe do Windows sai daqui sem precisar de uma máquina Windows.
-# Dispara ao criar uma tag (ex: v1.0.0) ou manualmente pelo botão "Run workflow".
+# Ao criar uma tag (ex: v1.0.0), além de gerar os builds, PUBLICA um Release
+# público com os instaladores — daí os links de download da landing funcionam
+# em 1 clique (releases/latest/download/MyDelivery-Setup.exe, etc.).
 name: build-desktop
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -32,3 +37,23 @@ jobs:
           path: |
             dist/*.exe
             dist/*.dmg
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar instaladores dos builds
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Publicar Release público com os instaladores
+        uses: softprops/action-gh-release@v2
+        with:
+          name: MyDelivery ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: |
+            dist/**/*.exe
+            dist/**/*.dmg
