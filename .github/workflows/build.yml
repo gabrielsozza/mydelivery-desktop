@@ -1,0 +1,34 @@
+# Gera os instaladores automaticamente na nuvem (grátis) — você está no Mac,
+# então o .exe do Windows sai daqui sem precisar de uma máquina Windows.
+# Dispara ao criar uma tag (ex: v1.0.0) ou manualmente pelo botão "Run workflow".
+name: build-desktop
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run dist:win
+      - name: Build (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instaladores-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
