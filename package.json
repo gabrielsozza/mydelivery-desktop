@@ -1,7 +1,7 @@
 {
   "name": "mydelivery-desktop",
   "productName": "MyDelivery",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "MyDelivery Desktop — abre o painel MyDelivery numa janela de app com impressão automática nativa.",
   "author": "MyDelivery",
   "main": "main.js",
@@ -18,10 +18,25 @@
   "build": {
     "appId": "br.com.mydeliveryfood.desktop",
     "productName": "MyDelivery",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.js", "preload.js", "print.js", "build/**/*"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "print.js",
+      "build/**/*"
+    ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "MyDelivery-Setup.${ext}"
     },
     "nsis": {
@@ -32,10 +47,20 @@
       "shortcutName": "MyDelivery"
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
       "category": "public.app-category.business",
       "artifactName": "MyDelivery-mac-${arch}.${ext}"
     },
-    "dmg": { "title": "MyDelivery" }
+    "dmg": {
+      "title": "MyDelivery"
+    }
   }
 }

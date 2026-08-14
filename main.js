@@ -28,7 +28,8 @@ function criarJanela() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      zoomFactor: 0.67   // zoom inicial do frame = 67% (reforçado no preload)
     }
   });
 
