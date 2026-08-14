@@ -16,8 +16,12 @@ permissions:
 jobs:
   build:
     strategy:
+      # Um tropeço num SO não cancela o build do outro.
+      fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        # macos-13 é a imagem estável pro dmgbuild — a macos-latest nova quebra
+        # ao montar o 2º DMG (arm64) no mesmo volume /Volumes/MyDelivery.
+        os: [windows-latest, macos-13]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
