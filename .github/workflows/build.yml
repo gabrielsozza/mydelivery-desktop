@@ -1,8 +1,10 @@
-# Gera os instaladores (Windows/Mac) + o APK Android na nuvem (grátis) e
-# PUBLICA tudo num Release público a cada tag (ex: v1.0.4). O electron-builder
-# sobe os instaladores + metadados de auto-update (latest.yml/latest-mac.yml);
-# o job android sobe o MyDelivery.apk. Nomes de arquivo fixos → os links de
-# download da landing continuam valendo.
+# Gera os instaladores (Windows/Mac) + o APK Android e publica tudo num Release
+# a cada tag. O release NASCE como rascunho e só vira público (latest) quando os
+# TRÊS terminam OK — assim o /latest nunca aponta pra um release pela metade.
+#
+# Mac: cada arquitetura (arm64/x64) num job separado no macos-latest (rápido, sem
+# fila). Um DMG por job evita a colisão de volume /Volumes/MyDelivery que quebrava
+# quando os dois DMGs eram montados no mesmo runner.
 name: build-desktop
 
 on:
@@ -14,15 +16,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      # Um tropeço num SO não cancela o build do outro.
-      fail-fast: false
-      matrix:
-        # macos-13 é a imagem estável pro dmgbuild — a macos-latest nova quebra
-        # ao montar o 2º DMG (arm64) no mesmo volume /Volumes/MyDelivery.
-        os: [windows-latest, macos-13]
-    runs-on: ${{ matrix.os }}
+  windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,19 +25,30 @@ jobs:
           node-version: 20
       - run: npm install
       - name: Build + publicar (Windows)
-        if: matrix.os == 'windows-latest'
         run: npm run dist:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build + publicar (macOS)
-        if: startsWith(matrix.os, 'macos')
-        run: npm run dist:mac
+
+  mac:
+    needs: windows   # o rascunho do release já existe → sem corrida de criação
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Build + publicar (macOS ${{ matrix.arch }})
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   android:
-    # App Android nativo (WebView em tela cheia) — APK assinado.
-    needs: build
+    needs: windows
     if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
@@ -78,13 +84,11 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: MyDelivery.apk
           fail_on_unmatched_files: true
-          draft: true   # mantém rascunho até o job publish liberar
+          draft: true
 
   publish:
-    # Só torna o Release PÚBLICO (latest) quando Win + Mac + APK terminaram OK.
-    # Se qualquer um falhar, o rascunho fica invisível e o /latest continua no
-    # último release completo — nunca cai num release pela metade (fim do 404).
-    needs: [build, android]
+    # Só torna o Release PÚBLICO (latest) quando Win + Mac (2 archs) + APK deram OK.
+    needs: [windows, mac, android]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
