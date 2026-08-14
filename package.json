@@ -1,7 +1,7 @@
 {
   "name": "mydelivery-desktop",
   "productName": "MyDelivery",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "MyDelivery Desktop — abre o painel MyDelivery numa janela de app com impressão automática nativa.",
   "author": "MyDelivery",
   "main": "main.js",
@@ -51,19 +51,14 @@
     },
     "mac": {
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
+        "dmg"
       ],
       "category": "public.app-category.business",
       "artifactName": "MyDelivery-mac-${arch}.${ext}"
     },
     "dmg": {
-      "title": "MyDelivery"
+      "title": "MyDelivery",
+      "backgroundColor": "#ffffff"
     },
     "publish": [
       {
