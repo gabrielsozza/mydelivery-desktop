@@ -3,3 +3,6 @@ dist/
 *.log
 .DS_Store
 build/icon.iconset/
+
+*.keystore
+MyDelivery.apk

@@ -1,8 +1,8 @@
-# Gera os instaladores na nuvem (grátis) e PUBLICA um Release público a cada
-# tag (ex: v1.0.3). O electron-builder sobe os instaladores + os metadados de
-# auto-update (latest.yml / latest-mac.yml) — é o que faz o app se atualizar
-# sozinho no Windows e avisar no Mac. Os nomes de arquivo são fixos, então os
-# links de download da landing continuam valendo.
+# Gera os instaladores (Windows/Mac) + o APK Android na nuvem (grátis) e
+# PUBLICA tudo num Release público a cada tag (ex: v1.0.4). O electron-builder
+# sobe os instaladores + metadados de auto-update (latest.yml/latest-mac.yml);
+# o job android sobe o MyDelivery.apk. Nomes de arquivo fixos → os links de
+# download da landing continuam valendo.
 name: build-desktop
 
 on:
@@ -35,7 +35,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build + publicar (macOS)
-        if: matrix.os == 'macos-latest'
+        if: startsWith(matrix.os, 'macos')
         run: npm run dist:mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  android:
+    # App Android nativo (WebView em tela cheia) — APK assinado.
+    needs: build
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Aceitar licenças do Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+      - name: Decodificar keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/release.keystore"
+      - name: Build APK assinado
+        working-directory: android
+        run: gradle assembleRelease --no-daemon --stacktrace
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: Preparar APK
+        run: |
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "APK encontrado: $APK"
+          cp "$APK" MyDelivery.apk
+          ls -la MyDelivery.apk
+      - name: Publicar APK no Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: MyDelivery.apk
+          fail_on_unmatched_files: true
