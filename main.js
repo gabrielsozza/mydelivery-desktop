@@ -2,9 +2,10 @@
 // Abre o painel web (mydeliveryfood.com.br) numa janela de app e expõe uma
 // ponte de impressão nativa. NÃO altera nada do sistema web: só carrega a URL.
 
-const { app, BrowserWindow, ipcMain, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, dialog } = require('electron');
 const path = require('path');
 const printModule = require('./print');
+const https = require('https');
 
 // URL do painel do dono. Trocar aqui se um dia mudar o domínio.
 const APP_URL = 'https://mydeliveryfood.com.br/login.html';
@@ -66,6 +67,8 @@ function criarJanela() {
         { label: 'Diminuir zoom', accelerator: 'CmdOrCtrl+-', click: () => win.webContents.setZoomFactor(Math.max(0.4, win.webContents.getZoomFactor() - 0.1)) },
         { label: 'Zoom padrão (67%)', accelerator: 'CmdOrCtrl+0', click: () => win.webContents.setZoomFactor(0.67) },
         { type: 'separator' },
+        { label: 'Verificar atualizações', click: () => checarAtualizacoes(true) },
+        { type: 'separator' },
         { label: 'Ferramentas (debug)', accelerator: 'CmdOrCtrl+Shift+I', click: () => win.webContents.toggleDevTools() },
         { type: 'separator' },
         { role: 'quit', label: 'Sair' }
@@ -74,6 +77,79 @@ function criarJanela() {
     { label: 'Editar', submenu: [ { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' } ] }
   ]);
   Menu.setApplicationMenu(menu);
+}
+
+// ── Auto-atualização ────────────────────────────────────────────────────
+// A maior parte das novidades já entra sozinha (o app abre o site — recarregou,
+// apareceu). Isto aqui cuida só das mudanças do MOTOR do app (impressão, zoom).
+//   • Windows: electron-updater baixa e instala sozinho (sem custo, sem assinar).
+//   • macOS: update silencioso exige assinatura Apple (paga). Sem ela, a gente
+//     só AVISA "tem versão nova" e abre o download — 1 clique.
+function semverMaior(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return true;
+    if ((pa[i] || 0) < (pb[i] || 0)) return false;
+  }
+  return false;
+}
+
+function avisarAtualizacaoMac(manual) {
+  const req = https.request({
+    host: 'api.github.com',
+    path: '/repos/gabrielsozza/mydelivery-desktop/releases/latest',
+    headers: { 'User-Agent': 'MyDelivery-Desktop', 'Accept': 'application/vnd.github+json' }
+  }, (res) => {
+    let data = '';
+    res.on('data', (c) => data += c);
+    res.on('end', () => {
+      try {
+        const j = JSON.parse(data);
+        const nova = String(j.tag_name || '').replace(/^v/, '');
+        if (nova && semverMaior(nova, app.getVersion())) {
+          dialog.showMessageBox(win, {
+            type: 'info',
+            title: 'Nova versão disponível',
+            message: 'Tem uma versão nova do MyDelivery (' + nova + ').',
+            detail: 'Baixe pra pegar as novidades — leva menos de 1 minuto.',
+            buttons: ['Baixar agora', 'Depois'], defaultId: 0, cancelId: 1
+          }).then((r) => {
+            if (r.response === 0) shell.openExternal('https://github.com/gabrielsozza/mydelivery-desktop/releases/latest');
+          });
+        } else if (manual) {
+          dialog.showMessageBox(win, { type: 'info', title: 'Tudo em dia', message: 'Você já está na versão mais recente.', buttons: ['Ok'] });
+        }
+      } catch (_) {}
+    });
+  });
+  req.on('error', () => {});
+  req.end();
+}
+
+function checarAtualizacoes(manual) {
+  if (process.platform === 'darwin') { avisarAtualizacaoMac(manual); return; }
+  // Windows (e Linux): electron-updater — baixa e instala sozinho.
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.removeAllListeners();
+    autoUpdater.on('update-downloaded', () => {
+      dialog.showMessageBox(win, {
+        type: 'info', title: 'Atualização pronta',
+        message: 'Uma nova versão do MyDelivery foi baixada.',
+        detail: 'O app vai reiniciar rapidinho pra aplicar.',
+        buttons: ['Reiniciar agora', 'Depois'], defaultId: 0, cancelId: 1
+      }).then((r) => { if (r.response === 0) autoUpdater.quitAndInstall(); });
+    });
+    if (manual) {
+      autoUpdater.on('update-not-available', () => {
+        dialog.showMessageBox(win, { type: 'info', title: 'Tudo em dia', message: 'Você já está na versão mais recente.', buttons: ['Ok'] });
+      });
+    }
+    autoUpdater.on('error', () => {});
+    autoUpdater.checkForUpdates().catch(() => {});
+  } catch (_) {}
 }
 
 // ── Ponte de impressão ──────────────────────────────────────────────────
@@ -113,6 +189,10 @@ app.whenReady().then(() => {
   try {
     app.setLoginItemSettings({ openAtLogin: true, openAsHidden: false });
   } catch (_) {}
+
+  // Checa atualização 8s depois de abrir (não atrapalha o boot) e a cada 6h.
+  setTimeout(() => checarAtualizacoes(false), 8000);
+  setInterval(() => checarAtualizacoes(false), 6 * 60 * 60 * 1000);
 
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) criarJanela(); });
 });

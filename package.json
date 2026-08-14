@@ -1,15 +1,18 @@
 {
   "name": "mydelivery-desktop",
   "productName": "MyDelivery",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MyDelivery Desktop — abre o painel MyDelivery numa janela de app com impressão automática nativa.",
   "author": "MyDelivery",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --publish never",
-    "dist:win": "electron-builder --win --publish never",
-    "dist:mac": "electron-builder --mac --publish never"
+    "dist": "electron-builder --publish always",
+    "dist:win": "electron-builder --win --publish always",
+    "dist:mac": "electron-builder --mac --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -61,6 +64,14 @@
     },
     "dmg": {
       "title": "MyDelivery"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "gabrielsozza",
+        "repo": "mydelivery-desktop",
+        "releaseType": "release"
+      }
+    ]
   }
 }

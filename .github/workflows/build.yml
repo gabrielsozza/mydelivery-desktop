@@ -1,8 +1,8 @@
-# Gera os instaladores automaticamente na nuvem (grátis) — você está no Mac,
-# então o .exe do Windows sai daqui sem precisar de uma máquina Windows.
-# Ao criar uma tag (ex: v1.0.0), além de gerar os builds, PUBLICA um Release
-# público com os instaladores — daí os links de download da landing funcionam
-# em 1 clique (releases/latest/download/MyDelivery-Setup.exe, etc.).
+# Gera os instaladores na nuvem (grátis) e PUBLICA um Release público a cada
+# tag (ex: v1.0.3). O electron-builder sobe os instaladores + os metadados de
+# auto-update (latest.yml / latest-mac.yml) — é o que faz o app se atualizar
+# sozinho no Windows e avisar no Mac. Os nomes de arquivo são fixos, então os
+# links de download da landing continuam valendo.
 name: build-desktop
 
 on:
@@ -25,35 +25,13 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - name: Build (Windows)
+      - name: Build + publicar (Windows)
         if: matrix.os == 'windows-latest'
         run: npm run dist:win
-      - name: Build (macOS)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build + publicar (macOS)
         if: matrix.os == 'macos-latest'
         run: npm run dist:mac
-      - uses: actions/upload-artifact@v4
-        with:
-          name: instaladores-${{ matrix.os }}
-          path: |
-            dist/*.exe
-            dist/*.dmg
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Baixar instaladores dos builds
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-      - name: Publicar Release público com os instaladores
-        uses: softprops/action-gh-release@v2
-        with:
-          name: MyDelivery ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          fail_on_unmatched_files: true
-          generate_release_notes: true
-          files: |
-            dist/**/*.exe
-            dist/**/*.dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
