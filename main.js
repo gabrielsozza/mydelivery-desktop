@@ -114,7 +114,13 @@ function avisarAtualizacaoMac(manual) {
             detail: 'Baixe pra pegar as novidades — leva menos de 1 minuto.',
             buttons: ['Baixar agora', 'Depois'], defaultId: 0, cancelId: 1
           }).then((r) => {
-            if (r.response === 0) shell.openExternal('https://github.com/gabrielsozza/mydelivery-desktop/releases/latest');
+            if (r.response === 0) {
+              // Baixa o .dmg DIRETO (não abre a página do GitHub). Escolhe o
+              // arquivo da arquitetura do Mac; a URL /latest/download já manda
+              // o arquivo com Content-Disposition: attachment → começa a baixar.
+              const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+              shell.openExternal('https://github.com/gabrielsozza/mydelivery-desktop/releases/latest/download/MyDelivery-mac-' + arch + '.dmg');
+            }
           });
         } else if (manual) {
           dialog.showMessageBox(win, { type: 'info', title: 'Tudo em dia', message: 'Você já está na versão mais recente.', buttons: ['Ok'] });
