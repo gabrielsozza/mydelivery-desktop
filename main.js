@@ -34,9 +34,21 @@ function criarJanela() {
 
   win.loadURL(APP_URL);
 
-  // Links externos (WhatsApp, etc.) abrem no navegador padrão, não dentro do app.
+  // Zoom padrão menor (~67%, igual "67%" no navegador) — sem isso os blocos
+  // ficam gigantes na janela do app. Reaplica a cada página carregada.
+  win.webContents.on('did-finish-load', () => {
+    try { win.webContents.setZoomFactor(0.67); } catch (_) {}
+  });
+
+  // Popups de impressão (window.open sem URL / blob / data) precisam abrir
+  // DENTRO do app pra o window.print funcionar. Só links externos http(s)
+  // (WhatsApp, etc.) é que vão pro navegador padrão.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://mydeliveryfood.com.br')) return { action: 'allow' };
+    if (!url || url === 'about:blank' || url.startsWith('about:blank') ||
+        url.startsWith('data:') || url.startsWith('blob:') ||
+        url.startsWith('https://mydeliveryfood.com.br')) {
+      return { action: 'allow' };
+    }
     shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -48,6 +60,10 @@ function criarJanela() {
       submenu: [
         { label: 'Recarregar', accelerator: 'CmdOrCtrl+R', click: () => win.reload() },
         { label: 'Tela cheia', accelerator: 'F11', click: () => win.setFullScreen(!win.isFullScreen()) },
+        { type: 'separator' },
+        { label: 'Aumentar zoom', accelerator: 'CmdOrCtrl+Plus', click: () => win.webContents.setZoomFactor(Math.min(2, win.webContents.getZoomFactor() + 0.1)) },
+        { label: 'Diminuir zoom', accelerator: 'CmdOrCtrl+-', click: () => win.webContents.setZoomFactor(Math.max(0.4, win.webContents.getZoomFactor() - 0.1)) },
+        { label: 'Zoom padrão (67%)', accelerator: 'CmdOrCtrl+0', click: () => win.webContents.setZoomFactor(0.67) },
         { type: 'separator' },
         { label: 'Ferramentas (debug)', accelerator: 'CmdOrCtrl+Shift+I', click: () => win.webContents.toggleDevTools() },
         { type: 'separator' },
