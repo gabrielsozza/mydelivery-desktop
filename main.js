@@ -115,11 +115,10 @@ function avisarAtualizacaoMac(manual) {
             buttons: ['Baixar agora', 'Depois'], defaultId: 0, cancelId: 1
           }).then((r) => {
             if (r.response === 0) {
-              // Baixa o .dmg DIRETO (não abre a página do GitHub). Escolhe o
-              // arquivo da arquitetura do Mac; a URL /latest/download já manda
-              // o arquivo com Content-Disposition: attachment → começa a baixar.
-              const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-              shell.openExternal('https://github.com/gabrielsozza/mydelivery-desktop/releases/latest/download/MyDelivery-mac-' + arch + '.dmg');
+              // Manda pro site (seção #app), onde o cliente baixa a versão nova —
+              // sem levar pro GitHub (que confundia). O site cuida de mostrar o
+              // download certo pro Mac.
+              shell.openExternal('https://mydeliveryfood.com.br/#app');
             }
           });
         } else if (manual) {
