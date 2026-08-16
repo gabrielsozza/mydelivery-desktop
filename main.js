@@ -30,16 +30,16 @@ function criarJanela() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      zoomFactor: 0.67   // zoom inicial do frame = 67% (reforçado no preload)
+      zoomFactor: 0.75   // zoom inicial do frame = 75% (reforçado no preload)
     }
   });
 
   win.loadURL(APP_URL);
 
-  // Zoom padrão menor (~67%, igual "67%" no navegador) — sem isso os blocos
+  // Zoom padrão menor (~75%, igual "75%" no navegador) — sem isso os blocos
   // ficam gigantes na janela do app. Reaplica a cada página carregada.
   win.webContents.on('did-finish-load', () => {
-    try { win.webContents.setZoomFactor(0.67); } catch (_) {}
+    try { win.webContents.setZoomFactor(0.75); } catch (_) {}
   });
 
   // Popups de impressão (window.open sem URL / blob / data) precisam abrir
@@ -65,7 +65,7 @@ function criarJanela() {
         { type: 'separator' },
         { label: 'Aumentar zoom', accelerator: 'CmdOrCtrl+Plus', click: () => win.webContents.setZoomFactor(Math.min(2, win.webContents.getZoomFactor() + 0.1)) },
         { label: 'Diminuir zoom', accelerator: 'CmdOrCtrl+-', click: () => win.webContents.setZoomFactor(Math.max(0.4, win.webContents.getZoomFactor() - 0.1)) },
-        { label: 'Zoom padrão (67%)', accelerator: 'CmdOrCtrl+0', click: () => win.webContents.setZoomFactor(0.67) },
+        { label: 'Zoom padrão (75%)', accelerator: 'CmdOrCtrl+0', click: () => win.webContents.setZoomFactor(0.75) },
         { type: 'separator' },
         { label: 'Verificar atualizações', click: () => checarAtualizacoes(true) },
         { type: 'separator' },
