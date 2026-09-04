@@ -40,9 +40,17 @@ public class MainActivity extends Activity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        // Fetch cross-origin da API HTTPS a partir de páginas HTTPS estava
+        // sendo bloqueado silenciosamente em alguns WebViews (garçom via "Erro
+        // de conexão"). Liberar mixed content permite o request fluir em
+        // dispositivos com WebView antigo/estrito.
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
+        // Debug remoto no Chrome (chrome://inspect) — ajuda a diagnosticar
+        // "Erro de conexão" reportado por garçom sem acesso ao aparelho.
+        WebView.setWebContentsDebuggingEnabled(true);
 
         // WebViewClient que repassa esquemas NÃO-http pro sistema: rawbt:
         // (impressão Bluetooth via RawBT), tel:, mailto:, whatsapp:, intent:...
