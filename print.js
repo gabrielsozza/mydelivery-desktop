@@ -100,47 +100,98 @@ if (-not $PrinterName -or $PrinterName -eq '') {
   # (antigo), Registry (bruto). Encontrar UMA impressora e' suficiente.
   $todas = @()
 
-  # 1) Get-Printer (PowerShell 3+, mais confiavel em Win10/11)
+  # 1) Get-Printer (PowerShell 3+, mais confiavel em Win10/11) — traz Status
+  # e PrinterStatus, permite skipar impressoras Offline/Error.
   try {
     $ps = Get-Printer -ErrorAction SilentlyContinue
-    if ($ps) { $todas += $ps | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Default = $false } } }
+    if ($ps) {
+      $todas += $ps | ForEach-Object {
+        $st = "$($_.PrinterStatus)"
+        # PrinterStatus: Normal=OK. Offline/Error/PaperOut/Paused etc = skip.
+        $ok = ($st -eq 'Normal' -or $st -eq '' -or $st -eq 'Idle')
+        [PSCustomObject]@{ Name = $_.Name; Default = $false; Ok = $ok; Fonte = 'Get-Printer' }
+      }
+    }
   } catch {}
 
-  # 2) CIM (o que ja usavamos)
+  # 2) CIM Win32_Printer — traz WorkOffline, PrinterStatus (int), Default.
   try {
     $cim = Get-CimInstance -Class Win32_Printer -ErrorAction SilentlyContinue
-    if ($cim) { $todas += $cim | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Default = [bool]$_.Default } } }
+    if ($cim) {
+      $todas += $cim | ForEach-Object {
+        # WorkOffline=true → skip. PrinterStatus 3=Idle, 4=Printing = ok.
+        # 1=Other, 2=Unknown, 5=Warmup, 6=StoppedPrinting, 7=Offline = skip.
+        $ok = (-not $_.WorkOffline) -and ($_.PrinterStatus -eq 3 -or $_.PrinterStatus -eq 4)
+        [PSCustomObject]@{ Name = $_.Name; Default = [bool]$_.Default; Ok = $ok; Fonte = 'CIM' }
+      }
+    }
   } catch {}
 
-  # 3) WMI legado (funciona em algumas maquinas onde CIM falhou)
+  # 3) WMI legado
   if ($todas.Count -eq 0) {
     try {
       $wmi = Get-WmiObject -Class Win32_Printer -ErrorAction SilentlyContinue
-      if ($wmi) { $todas += $wmi | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Default = [bool]$_.Default } } }
+      if ($wmi) {
+        $todas += $wmi | ForEach-Object {
+          $ok = (-not $_.WorkOffline) -and ($_.PrinterStatus -eq 3 -or $_.PrinterStatus -eq 4)
+          [PSCustomObject]@{ Name = $_.Name; Default = [bool]$_.Default; Ok = $ok; Fonte = 'WMI' }
+        }
+      }
     } catch {}
   }
 
-  # 4) Registry — ultimo recurso, le direto sem depender de WMI
+  # 4) Registry — ultimo recurso
   if ($todas.Count -eq 0) {
     try {
       $regPath = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Devices'
       $reg = Get-Item -Path $regPath -ErrorAction SilentlyContinue
       if ($reg) {
-        foreach ($n in $reg.Property) { $todas += [PSCustomObject]@{ Name = $n; Default = $false } }
+        foreach ($n in $reg.Property) { $todas += [PSCustomObject]@{ Name = $n; Default = $false; Ok = $true; Fonte = 'Registry' } }
       }
     } catch {}
   }
 
-  # Dedup por nome
-  $todas = $todas | Sort-Object Name -Unique
+  # Consolida: cada nome unico com o "melhor" status (Ok=true ganha)
+  $porNome = @{}
+  foreach ($t in $todas) {
+    if (-not $porNome.ContainsKey($t.Name)) { $porNome[$t.Name] = $t }
+    else {
+      $atual = $porNome[$t.Name]
+      # Merge: preserva Default=true de qualquer fonte, Ok=true de qualquer
+      $atual.Default = $atual.Default -or $t.Default
+      $atual.Ok = $atual.Ok -or $t.Ok
+    }
+  }
+  $todas = @($porNome.Values)
 
-  # Prefere: default > match termica > primeira
-  $def = $todas | Where-Object { $_.Default } | Select-Object -First 1
-  if ($def) { $PrinterName = $def.Name }
-  else {
-    $th = $todas | Where-Object { $_.Name -match '(?i)POS|thermal|térmic|termic|receipt|cupom|EPSON TM|TM-|T20|T88|58|80mm|Generic.*Text' } | Select-Object -First 1
-    if ($th) { $PrinterName = $th.Name }
-    elseif ($todas.Count -gt 0) { $PrinterName = $todas[0].Name }
+  # Ordena: online primeiro > match termica > default > outros
+  $online = $todas | Where-Object { $_.Ok }
+  $temTermicaNome = { param($n) $n -match '(?i)POS|thermal|térmic|termic|receipt|cupom|EPSON TM|TM-|T20|T88|58|80mm|Generic.*Text' }
+
+  # Prioridade:
+  # 1. Online + Default + Termica
+  # 2. Online + Termica
+  # 3. Online + Default
+  # 4. Online qualquer
+  # 5. Default (mesmo offline — ultimo recurso)
+  # 6. Qualquer
+  $escolhida = $null
+  $escolhida = $online | Where-Object { $_.Default -and (& $temTermicaNome $_.Name) } | Select-Object -First 1
+  if (-not $escolhida) { $escolhida = $online | Where-Object { & $temTermicaNome $_.Name } | Select-Object -First 1 }
+  if (-not $escolhida) { $escolhida = $online | Where-Object { $_.Default } | Select-Object -First 1 }
+  if (-not $escolhida) { $escolhida = $online | Select-Object -First 1 }
+  if (-not $escolhida) { $escolhida = $todas | Where-Object { $_.Default } | Select-Object -First 1 }
+  if (-not $escolhida) { $escolhida = $todas | Select-Object -First 1 }
+
+  if ($escolhida) {
+    $PrinterName = $escolhida.Name
+    Write-Host ("[MyDelivery] Impressora escolhida: '{0}' (Ok={1}, Default={2}, Fonte={3})" -f $escolhida.Name, $escolhida.Ok, $escolhida.Default, $escolhida.Fonte)
+  }
+
+  # Se so achou impressoras com erro, log detalhado pra dono ver.
+  if ($PrinterName -and -not ($escolhida.Ok)) {
+    Write-Host "[MyDelivery] AVISO: unica(s) impressora(s) disponivel(is) esta(o) offline/erro. Vou tentar mesmo assim — se falhar, verifique cabo/rede/spooler."
+    Write-Host ("[MyDelivery] Todas as impressoras: " + (($todas | ForEach-Object { "$($_.Name)[Ok=$($_.Ok),Def=$($_.Default)]" }) -join ' | '))
   }
 }
 if (-not $PrinterName -or $PrinterName -eq '') {
