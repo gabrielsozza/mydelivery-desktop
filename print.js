@@ -95,16 +95,58 @@ public static class RawPrinterHelper {
 Add-Type -TypeDefinition $code -Language CSharp | Out-Null
 
 if (-not $PrinterName -or $PrinterName -eq '') {
-  $def = Get-CimInstance -Class Win32_Printer -Filter "Default=True" -ErrorAction SilentlyContinue | Select-Object -First 1
+  # Cascata de deteccao: Get-CimInstance falha em algumas maquinas (spooler
+  # travado, permissao WMI). Fallbacks: Get-Printer (moderno), Get-WmiObject
+  # (antigo), Registry (bruto). Encontrar UMA impressora e' suficiente.
+  $todas = @()
+
+  # 1) Get-Printer (PowerShell 3+, mais confiavel em Win10/11)
+  try {
+    $ps = Get-Printer -ErrorAction SilentlyContinue
+    if ($ps) { $todas += $ps | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Default = $false } } }
+  } catch {}
+
+  # 2) CIM (o que ja usavamos)
+  try {
+    $cim = Get-CimInstance -Class Win32_Printer -ErrorAction SilentlyContinue
+    if ($cim) { $todas += $cim | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Default = [bool]$_.Default } } }
+  } catch {}
+
+  # 3) WMI legado (funciona em algumas maquinas onde CIM falhou)
+  if ($todas.Count -eq 0) {
+    try {
+      $wmi = Get-WmiObject -Class Win32_Printer -ErrorAction SilentlyContinue
+      if ($wmi) { $todas += $wmi | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Default = [bool]$_.Default } } }
+    } catch {}
+  }
+
+  # 4) Registry — ultimo recurso, le direto sem depender de WMI
+  if ($todas.Count -eq 0) {
+    try {
+      $regPath = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Devices'
+      $reg = Get-Item -Path $regPath -ErrorAction SilentlyContinue
+      if ($reg) {
+        foreach ($n in $reg.Property) { $todas += [PSCustomObject]@{ Name = $n; Default = $false } }
+      }
+    } catch {}
+  }
+
+  # Dedup por nome
+  $todas = $todas | Sort-Object Name -Unique
+
+  # Prefere: default > match termica > primeira
+  $def = $todas | Where-Object { $_.Default } | Select-Object -First 1
   if ($def) { $PrinterName = $def.Name }
   else {
-    $all = Get-CimInstance -Class Win32_Printer -ErrorAction SilentlyContinue
-    $th = $all | Where-Object { $_.Name -match '(?i)POS|thermal|térmic|termic|receipt|cupom|EPSON TM|TM-|T20|T88|58|80mm|Generic.*Text' } | Select-Object -First 1
+    $th = $todas | Where-Object { $_.Name -match '(?i)POS|thermal|térmic|termic|receipt|cupom|EPSON TM|TM-|T20|T88|58|80mm|Generic.*Text' } | Select-Object -First 1
     if ($th) { $PrinterName = $th.Name }
-    elseif ($all) { $PrinterName = ($all | Select-Object -First 1).Name }
+    elseif ($todas.Count -gt 0) { $PrinterName = $todas[0].Name }
   }
 }
-if (-not $PrinterName -or $PrinterName -eq '') { Write-Error 'Nenhuma impressora encontrada no Windows'; exit 3 }
+if (-not $PrinterName -or $PrinterName -eq '') {
+  Write-Error 'Nenhuma impressora encontrada no Windows. Abra Painel de Controle > Dispositivos e Impressoras — se nao aparece nenhuma, reinstale o driver da impressora. Se aparecem mas com "Erro", clique direito > Ver o que esta sendo impresso > Impressora > Cancelar Todos os Documentos.'
+  exit 3
+}
 
 $bytes = [System.IO.File]::ReadAllBytes($FilePath)
 $res = [RawPrinterHelper]::SendBytes($PrinterName, $bytes)
