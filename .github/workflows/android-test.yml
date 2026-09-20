@@ -24,7 +24,7 @@ jobs:
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/release.keystore"
       - name: Build APK assinado
         working-directory: android
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: gradle testDebugUnitTest lintRelease assembleRelease --no-daemon --stacktrace
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
