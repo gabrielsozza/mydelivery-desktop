@@ -30,6 +30,9 @@ function criarJanela() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // Pedidos continuam chegando e tocando com a janela minimizada.
+      backgroundThrottling: false,
+      autoplayPolicy: 'no-user-gesture-required',
       zoomFactor: 0.75   // zoom inicial do frame = 75% (reforçado no preload)
     }
   });
