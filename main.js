@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, shell, Menu, dialog } = require('electron')
 const path = require('path');
 const printModule = require('./print');
 const https = require('https');
+const { attachWindowRecovery, revealWindow } = require('./window-recovery');
 
 // URL do painel do dono. Trocar aqui se um dia mudar o domínio.
 const APP_URL = 'https://mydeliveryfood.com.br/login.html';
@@ -37,7 +38,13 @@ function criarJanela() {
     }
   });
 
-  win.loadURL(APP_URL);
+  const currentWindow = win;
+  currentWindow.on('closed', () => {
+    if (win === currentWindow) win = null;
+  });
+  attachWindowRecovery(currentWindow, { appUrl: APP_URL, shell, dialog });
+  // loadURL rejects on connection failures; did-fail-load shows recovery.
+  currentWindow.loadURL(APP_URL).catch(() => {});
 
   // Zoom padrão menor (~75%, igual "75%" no navegador) — sem isso os blocos
   // ficam gigantes na janela do app. Reaplica a cada página carregada.
@@ -182,7 +189,7 @@ ipcMain.handle('md:listar-impressoras', async () => {
   catch (e) { return []; }
 });
 
-app.whenReady().then(() => {
+if (gotLock) app.whenReady().then(() => {
   // Logo MyDelivery no dock do Mac (também no modo dev). No app empacotado o
   // ícone vem do build/icon.icns (Mac) e build/icon.ico (Windows) via builder.
   try {
@@ -202,11 +209,15 @@ app.whenReady().then(() => {
   setTimeout(() => checarAtualizacoes(false), 8000);
   setInterval(() => checarAtualizacoes(false), 6 * 60 * 60 * 1000);
 
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) criarJanela(); });
+  app.on('activate', abrirOuRestaurarJanela);
 });
 
-app.on('second-instance', () => {
-  if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
-});
+function abrirOuRestaurarJanela() {
+  if (!gotLock || !app.isReady()) return;
+  if (!win || win.isDestroyed()) criarJanela();
+  revealWindow(win);
+}
+
+app.on('second-instance', abrirOuRestaurarJanela);
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
