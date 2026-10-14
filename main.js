@@ -7,6 +7,7 @@ const path = require('path');
 const printModule = require('./print');
 const https = require('https');
 const { attachWindowRecovery, revealWindow } = require('./window-recovery');
+const { createPrintingService, selectPrinter } = require('./driver-print');
 
 // URL do painel do dono. Trocar aqui se um dia mudar o domínio.
 const APP_URL = 'https://mydeliveryfood.com.br/login.html';
@@ -17,6 +18,18 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) { app.quit(); }
 
 let win = null;
+let printingWindow = null;
+const printing = createPrintingService({ app, BrowserWindow, rawPrint: printModule.imprimirRaw, getContents: () => win.webContents });
+
+function abrirConfiguracaoImpressora() {
+  if (printingWindow && !printingWindow.isDestroyed()) { printingWindow.show(); printingWindow.focus(); return; }
+  printingWindow = new BrowserWindow({ width: 660, height: 820, minWidth: 500, minHeight: 580, resizable: true, parent: win, title: 'Configurar impressora — MyDelivery', backgroundColor: '#f7f7f5', webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  printingWindow.setMenu(null);
+  printingWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  printingWindow.webContents.on('will-navigate', event => event.preventDefault());
+  printingWindow.on('closed', () => { printingWindow = null; });
+  printingWindow.loadFile(path.join(__dirname, 'print-settings.html')).catch(() => {});
+}
 
 function criarJanela() {
   win = new BrowserWindow({
@@ -71,6 +84,7 @@ function criarJanela() {
       label: 'MyDelivery',
       submenu: [
         { label: 'Recarregar', accelerator: 'CmdOrCtrl+R', click: () => win.reload() },
+        { label: 'Configurar impressora', click: abrirConfiguracaoImpressora },
         { label: 'Tela cheia', accelerator: 'F11', click: () => win.setFullScreen(!win.isFullScreen()) },
         { type: 'separator' },
         { label: 'Aumentar zoom', accelerator: 'CmdOrCtrl+Plus', click: () => win.webContents.setZoomFactor(Math.min(2, win.webContents.getZoomFactor() + 0.1)) },
@@ -168,25 +182,53 @@ function checarAtualizacoes(manual) {
 }
 
 // ── Ponte de impressão ──────────────────────────────────────────────────
-// O web manda os bytes ESC/POS já prontos (o mesmo cupom do WebUSB) e o
-// processo nativo envia direto pra impressora padrão do sistema — sem o
-// pop-up do navegador, sem o .bat, sem permissão de USB.
-ipcMain.handle('md:imprimir', async (_evt, payload) => {
+// Accept the existing web receipt format, but use the installed Windows
+// driver by default. Virtual printers must never receive thermal commands.
+function trustedPrintSender(event) {
   try {
+    return event.senderFrame === event.sender.mainFrame && new URL(event.senderFrame.url).origin === 'https://mydeliveryfood.com.br';
+  } catch (_) { return false; }
+}
+ipcMain.handle('md:imprimir', async (event, payload) => {
+  try {
+    if (!trustedPrintSender(event)) throw new Error('Origem de impressão não autorizada.');
     const bytes = Array.isArray(payload && payload.bytes) ? payload.bytes : [];
     const printerName = (payload && payload.printerName) || null;
-    if (!bytes.length) return { ok: false, motivo: 'sem bytes' };
-    await printModule.imprimirRaw(Buffer.from(bytes), printerName);
-    return { ok: true };
+    if (!bytes.length || bytes.length > 2 * 1024 * 1024 || bytes.some(b => !Number.isInteger(b) || b < 0 || b > 255)) throw new Error('Cupom inválido.');
+    if (printerName !== null && typeof printerName !== 'string') throw new Error('Impressora inválida.');
+    return await printing.print(bytes, printerName);
   } catch (e) {
     return { ok: false, motivo: e && e.message ? e.message : String(e) };
   }
 });
 
 // Lista as impressoras disponíveis (pra o dono escolher a térmica no painel).
-ipcMain.handle('md:listar-impressoras', async () => {
-  try { return await win.webContents.getPrintersAsync(); }
+ipcMain.handle('md:listar-impressoras', async event => {
+  try { if (!trustedPrintSender(event)) return []; return await printing.list(); }
   catch (e) { return []; }
+});
+
+function settingsSender(event) {
+  return printingWindow && !printingWindow.isDestroyed() && event.sender === printingWindow.webContents && event.senderFrame === event.sender.mainFrame;
+}
+ipcMain.handle('md:abrir-config-impressora', event => {
+  if (!trustedPrintSender(event)) return { ok: false };
+  abrirConfiguracaoImpressora();
+  return { ok: true };
+});
+ipcMain.handle('md:config-impressora', async (event, action, value) => {
+  try {
+    if (!settingsSender(event)) throw new Error('Abra a configuração pelo menu MyDelivery.');
+    if (action === 'load') {
+      const printers = await printing.list();
+      let automaticPrinter = '';
+      try { automaticPrinter = selectPrinter(printers).name; } catch (_) {}
+      return { ok: true, settings: printing.settings(), printers, automaticPrinter };
+    }
+    if (action === 'save') return { ok: true, settings: await printing.save(value) };
+    if (action === 'test') return await printing.print(Buffer.from('\x1b@\x1ba\x01\x1bE\x01MYDELIVERY\n\x1bE\x00TESTE DE IMPRESSAO\n\nConfira se este cupom esta legivel.\n\n\x1dV\x01', 'ascii'));
+    throw new Error('Ação inválida.');
+  } catch (error) { return { ok: false, motivo: error.message }; }
 });
 
 if (gotLock) app.whenReady().then(() => {

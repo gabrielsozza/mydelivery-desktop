@@ -21,7 +21,7 @@ try {
 contextBridge.exposeInMainWorld('myDeliveryDesktop', {
   isDesktop: true,
   platform: process.platform, // 'win32' | 'darwin'
-  versao: '1.0.18',
+  versao: '1.0.19',
 
   // Recebe os bytes ESC/POS (array de números) já montados pelo cupom e manda
   // pra impressora padrão (ou a escolhida). Retorna { ok, motivo }.
@@ -29,7 +29,27 @@ contextBridge.exposeInMainWorld('myDeliveryDesktop', {
     ipcRenderer.invoke('md:imprimir', { bytes: Array.from(bytes || []), printerName: printerName || null }),
 
   listarImpressoras: () => ipcRenderer.invoke('md:listar-impressoras'),
+  configurarImpressora: (action, value) => ipcRenderer.invoke('md:config-impressora', action, value),
 
   // Deixa a página forçar o zoom padrão se precisar (ex.: botão "resetar zoom").
   setZoom: (f) => { try { webFrame.setZoomFactor(Number(f) || ZOOM); } catch (_) {} }
+});
+
+// Keep printer selection available in the installed app even when the web
+// panel predates this version. The existing native menu provides a fallback.
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.location.origin !== 'https://mydeliveryfood.com.br' || window.location.pathname !== '/configuracoes.html') return;
+  function addPrinterButton() {
+    const controls = document.querySelector('#impressora-controles .mdimpr-card');
+    if (!controls || controls.querySelector('[data-desktop-printer-settings]')) return;
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'mdimpr-btn ghost mdimpr-cta';
+    button.dataset.desktopPrinterSettings = 'true'; button.textContent = 'Escolher impressora';
+    button.addEventListener('click', () => ipcRenderer.invoke('md:abrir-config-impressora'));
+    controls.appendChild(button);
+  }
+  addPrinterButton();
+  const observer = new MutationObserver(addPrinterButton);
+  observer.observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('pagehide', () => observer.disconnect(), { once: true });
 });
