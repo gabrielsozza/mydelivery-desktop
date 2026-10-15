@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { receiptDocument, thermalReceipt } = require('../receipt-document');
+const { receiptDocument, thermalReceipt, layoutReceipt } = require('../receipt-document');
 const { createPrintingService, selectPrinter } = require('../driver-print');
 
 const sample = Buffer.from('\x1b@\x1bt\x03\x1ba\x01\x1b!\x30PEDIDO 123\n\x1b!\0\x1ba\0\x1bE\x012x Pizza\x1bE\0\nTOTAL: R$ 80,00\n\x1dV\x01', 'ascii');
@@ -36,7 +36,7 @@ test('fiscal raster QR preserves pixels and validates truncated payloads', () =>
   const qr = Buffer.from([29,118,48,0,1,0,2,0,128,1]);
   const html = receiptDocument(Buffer.concat([sample,qr]));
   assert.match(html, /viewBox="0 0 8 2"/); assert.match(html, /M0 0h1v1h-1zM7 1h1v1h-1z/);
-  assert.throws(() => receiptDocument(qr.subarray(0,9)), /incompleto/);
+  assert.throws(() => receiptDocument(qr.subarray(0,9)), /incomplet[oa]/);
   assert.throws(() => receiptDocument(Buffer.from([29,118,48,0,255,255,255,255])), /inválida/);
 });
 test('OneNote always uses the installed driver, even with legacy raw preference', async t => {
@@ -157,4 +157,35 @@ test('disabled kitchen restores single-printer behavior; missing destination nev
   assert.equal(f.jobs.length,0);
   await f.service.save({...config,kitchen:null});
   await f.service.print(sample); assert.equal(f.jobs.length,1);
+});
+
+const manaReceipt = Buffer.from('\x1b@\x1ba\0\x1bE\x01(1) Pizza Tradicional Pequena\x1bE\0\n\x1ba\0\x1bE\x01                       R$ 30,00\x1bE\0\n\x1ba\0  + Frango com Catupiry (R$ 30,00)\n\x1ba\0\x1bE\x01(1) Refrigerante 1 L     R$ 10,00\x1bE\0\n\x1ba\0  + Coca-Cola Original\n','ascii');
+function visibleRows(bytes) {
+  return bytes.toString('ascii').replace(/\x1b@|\x1b[!aEtG][\s\S]/g,'').split('\n').filter(Boolean);
+}
+test('Mana photo: quantity, full pizza name and amount share one line on 58 and 80 mm', () => {
+  for (const width of [58,80]) {
+    const result = layoutReceipt(manaReceipt,width), rows = visibleRows(result);
+    assert.equal(rows.length,4);
+    assert.match(rows[0],/^\(1\) Pizza Tradicional Pequena\s+R\$ 30,00$/);
+    assert.equal(rows[1],'  + Frango com Catupiry (R$ 30,00)');
+    assert.match(rows[2],/^\(1\) Refrigerante 1 L\s+R\$ 10,00$/);
+    assert.ok(rows.every(r=>r.length <= (width === 58 ? 42 : 48)));
+    assert.equal(result.includes(Buffer.from([27,33,1])),width === 58);
+    assert.deepEqual(layoutReceipt(result,width), result, 'layout is stable when printed again');
+  }
+});
+test('layout never interprets line breaks or fake item text inside raster pixels', () => {
+  const pixels=Buffer.from('\n(1) Pizza\n R$ 20,00\n','ascii');
+  const raster=Buffer.concat([Buffer.from([29,118,48,0,1,0,pixels.length,0]),pixels]);
+  assert.deepEqual(layoutReceipt(raster,58),raster);
+});
+test('cashier 80 mm and kitchen 58 mm format independently without losing amounts', async t => {
+  const f=setup(t); f.setPrinters([{name:'Caixa'},{name:'Cozinha'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:{printerName:'Cozinha',width:58,mode:'raw'}});
+  await f.service.print(manaReceipt);
+  assert.equal(f.raw.length,2);
+  for(const [bytes] of f.raw) assert.match(visibleRows(bytes)[0],/Pizza Tradicional Pequena\s+R\$ 30,00/);
+  assert.equal(visibleRows(f.raw[0][0])[0].length,48);
+  assert.equal(visibleRows(f.raw[1][0])[0].length,42);
 });
