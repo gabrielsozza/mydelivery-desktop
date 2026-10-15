@@ -15,7 +15,11 @@ function receiptDocument(input, width = 80) {
   }
   function flushLine() {
     flushText();
-    output += `<div class="line" style="text-align:${align}">${line || '<br>'}</div>`;
+    // Separators should fill the paper, not wrap into two lines on 58 mm rolls.
+    const plain = line.replace(/<[^>]*>/g, '');
+    output += /^[-=]{8,}$/.test(plain)
+      ? `<div class="separator" style="border-top-style:${plain[0] === '=' ? 'double' : 'dashed'}"></div>`
+      : `<div class="line" style="text-align:${align}">${line || '<br>'}</div>`;
     line = '';
   }
   function need(i, n) { if (i + n > bytes.length) throw new Error('Cupom incompleto. Tente imprimir novamente.'); }
@@ -58,7 +62,7 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm 4mm;font-family:'Courier New',monospace;font-size:12.5px;font-weight:700}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.25em}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm ${width === 58 ? 2 : 4}mm;font-family:'Courier New',monospace;font-size:12.5px;font-weight:700}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.25em}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use
