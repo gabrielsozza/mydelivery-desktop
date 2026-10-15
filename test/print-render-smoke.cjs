@@ -31,12 +31,16 @@ app.whenReady().then(async () => {
   assert.match(await ui.webContents.executeJavaScript('document.querySelector("#status").textContent'), /salva/);
   fs.writeFileSync(path.join(output,'printer-settings.png'), (await ui.webContents.capturePage()).toPNG());
   ui.destroy();
-  const receipt = new BrowserWindow({show:false,width:420,height:1200,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,javascript:false}});
+  const receipt = new BrowserWindow({show:false,width:420,height:1200,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,javascript:true}});
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(require('./fixtures/receipt.json'))));
   const pdf = await receipt.webContents.printToPDF({printBackground:true,pageSize:'A4'});
   assert.ok(pdf.length > 5000);
   fs.writeFileSync(path.join(output,'receipt.pdf'),pdf);
   fs.writeFileSync(path.join(output,'receipt.png'),(await receipt.webContents.capturePage()).toPNG());
+  await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(require('./fixtures/receipt.json'),58)));
+  const narrow = await receipt.webContents.executeJavaScript('({width:document.body.clientWidth,scroll:document.body.scrollWidth})');
+  assert.ok(narrow.scroll <= narrow.width + 1, '58 mm receipt must not crop horizontally');
+  fs.writeFileSync(path.join(output,'receipt-58mm.png'),(await receipt.webContents.capturePage()).toPNG());
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);
   app.exit(0);

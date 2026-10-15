@@ -45,7 +45,7 @@ async function load() {
       const missing = document.createElement('option'); missing.value = savedKitchen.printerName; missing.textContent = savedKitchen.printerName + ' (não encontrada)'; kitchen.append(missing);
     }
     kitchen.value = savedKitchen ? savedKitchen.printerName : '';
-    kitchenWidth.value = String(savedKitchen ? savedKitchen.width : 80); kitchenMode.value = savedKitchen ? savedKitchen.mode : 'driver';
+    kitchenWidth.value = String(savedKitchen ? savedKitchen.width : 80); kitchenMode.value = savedKitchen ? savedKitchen.mode : 'auto';
     printer.disabled = false; explain();
     message(printers.length ? '' : 'Nenhuma impressora encontrada. Instale o driver e clique em Atualizar lista.', !printers.length);
   } catch (error) { message(error.message, true); }

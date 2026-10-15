@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
-const { receiptDocument } = require('./receipt-document');
+const { receiptDocument, thermalReceipt } = require('./receipt-document');
 
 const isVirtual = name => /onenote|print to pdf|xps|fax/i.test(name || '');
 function selectPrinter(printers, name) {
@@ -24,17 +24,17 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   function settings() {
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'printing.json'), 'utf8')); } catch (_) {}
-    return { printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['driver', 'raw'].includes(saved.mode) ? saved.mode : process.platform === 'win32' ? 'driver' : 'raw', kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: saved.kitchen.mode === 'raw' ? 'raw' : 'driver' } : null };
+    return { printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
   }
   async function list() { return getContents().getPrintersAsync(); }
   async function save(value) {
-    if (!value || typeof value.printerName !== 'string' || ![58, 80].includes(value.width) || !['driver', 'raw'].includes(value.mode)) throw new Error('Configuração de impressão inválida.');
+    if (!value || typeof value.printerName !== 'string' || ![58, 80].includes(value.width) || !['auto', 'driver', 'raw'].includes(value.mode)) throw new Error('Configuração de impressão inválida.');
     const printer = selectPrinter(await list(), value.printerName);
     if (value.mode === 'raw' && isVirtual(printer.name)) throw new Error('Para OneNote, PDF ou outra impressora virtual, selecione “Pelo driver do sistema”.');
     let kitchen = null;
     if (value.kitchen != null) {
       const k = value.kitchen;
-      if (typeof k.printerName !== 'string' || !k.printerName || ![58, 80].includes(k.width) || !['driver', 'raw'].includes(k.mode)) throw new Error('Configuração da cozinha inválida.');
+      if (typeof k.printerName !== 'string' || !k.printerName || ![58, 80].includes(k.width) || !['auto', 'driver', 'raw'].includes(k.mode)) throw new Error('Configuração da cozinha inválida.');
       const destination = selectPrinter(await list(), k.printerName);
       if (k.mode === 'raw' && isVirtual(destination.name)) throw new Error('Na cozinha, selecione o driver do sistema para impressoras virtuais.');
       kitchen = { printerName: k.printerName, width: k.width, mode: k.mode };
@@ -46,8 +46,9 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     return settings();
   }
   async function sendOne(bytes, config, printer) {
-    if (config.mode === 'raw' && !isVirtual(printer.name)) {
-      await rawPrint(Buffer.from(bytes), printer.name);
+    // Preserve pre-1.0.19 thermal transport unless the owner explicitly chose a driver.
+    if ((config.mode === 'raw' || config.mode === 'auto') && !isVirtual(printer.name)) {
+      await rawPrint(thermalReceipt(bytes), printer.name);
       return { ok: true, printerName: printer.name, via: 'raw' };
     }
     // OneNote uses the regular driver path, never the thermal RAW spooler.

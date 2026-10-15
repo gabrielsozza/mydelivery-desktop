@@ -8,11 +8,11 @@
 <div id="virtual-note" class="notice" hidden></div>
 <label for="width">Largura do cupom</label><select id="width"><option value="80">80 mm</option><option value="58">58 mm</option></select>
 <p class="help">Na impressora térmica, use também essa largura nas preferências do driver.</p>
-<details><summary>Opções de impressão</summary><label for="mode">Como enviar o cupom</label><select id="mode"><option value="driver">Pelo driver do sistema (recomendado no Windows)</option><option value="raw">Térmica direta — ESC/POS</option></select><p class="help">O modo direto é indicado para térmicas compatíveis com ESC/POS. No modo pelo driver, o avanço e corte de papel dependem das preferências da impressora.</p></details>
+<details><summary>Opções de impressão</summary><label for="mode">Como enviar o cupom</label><select id="mode"><option value="auto">Automático (recomendado para térmicas)</option><option value="driver">Pelo driver do sistema</option><option value="raw">Térmica direta — ESC/POS</option></select><p class="help">Automático envia diretamente para térmicas, inclusive Bluetooth, e usa o driver para OneNote/PDF. Para impressoras comuns A4, escolha o driver do sistema. No modo pelo driver, o avanço e corte de papel dependem das preferências da impressora.</p></details>
 <div class="section"><label for="kitchen">Também imprimir na cozinha</label><select id="kitchen"><option value="">Não enviar uma segunda cópia</option></select>
 <p class="help">Cada pedido sai no caixa e na cozinha. Se escolher a mesma impressora nos dois campos, ela recebe uma única cópia.</p>
 <div id="kitchen-options" hidden><label for="kitchen-width">Papel da cozinha</label><select id="kitchen-width"><option value="80">80 mm</option><option value="58">58 mm</option></select>
-<label for="kitchen-mode">Impressão da cozinha</label><select id="kitchen-mode"><option value="driver">Pelo driver do sistema</option><option value="raw">Térmica direta — ESC/POS</option></select><div id="kitchen-note" class="notice" hidden></div></div></div>
+<label for="kitchen-mode">Impressão da cozinha</label><select id="kitchen-mode"><option value="auto">Automático (recomendado para térmicas)</option><option value="driver">Pelo driver do sistema</option><option value="raw">Térmica direta — ESC/POS</option></select><div id="kitchen-note" class="notice" hidden></div></div></div>
 <div class="actions"><button id="save" class="primary" disabled>Salvar</button><button id="test" disabled>Salvar e imprimir teste</button><button id="refresh">Atualizar lista</button></div>
 <div id="status" role="status" aria-live="polite"></div></div>
 <script src="print-settings.js"></script></body></html>

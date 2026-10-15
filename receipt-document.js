@@ -10,7 +10,7 @@ function receiptDocument(input, width = 80) {
   const escape = value => value.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   function flushText() {
     if (!text) return;
-    line += `<span style="font-weight:${bold ? 700 : 400};font-size:${size & 0x20 ? 22 : 11}px;line-height:${size & 0x10 ? 2 : 1.25}">${escape(text)}</span>`;
+    line += `<span style="font-weight:${bold ? 900 : 700};font-size:${size & 0x20 ? 24 : 12.5}px;line-height:${size & 0x10 ? 2 : 1.3};-webkit-text-stroke:${bold ? 0.18 : 0}px">${escape(text)}</span>`;
     text = '';
   }
   function flushLine() {
@@ -58,7 +58,33 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm 4mm;font-family:'Courier New',monospace;font-size:11px}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.25em}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm 4mm;font-family:'Courier New',monospace;font-size:12.5px;font-weight:700}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.25em}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
 }
 
-module.exports = { receiptDocument };
+// Native thermal fonts have discrete sizes. Keep their column width and use
+// emphasis for body text plus double-strike for headings, rather than doubling
+// every character. Raster data (including fiscal QR) must remain byte-identical.
+function thermalReceipt(input) {
+  const bytes = Buffer.from(input), out = [27, 69, 1];
+  for (let i = 0; i < bytes.length;) {
+    if (bytes[i] === 29 && bytes[i + 1] === 118 && bytes[i + 2] === 48) {
+      if (i + 8 > bytes.length) throw new Error('Imagem de cupom incompleta.');
+      const size = (bytes[i + 4] + bytes[i + 5] * 256) * (bytes[i + 6] + bytes[i + 7] * 256);
+      const end = i + 8 + size;
+      if (end > bytes.length) throw new Error('Imagem de cupom incompleta.');
+      for (; i < end; i++) out.push(bytes[i]);
+    } else if (bytes[i] === 27 && bytes[i + 1] === 64) {
+      out.push(27, 64, 27, 69, 1); i += 2;
+    } else if (bytes[i] === 27 && bytes[i + 1] === 69 && i + 2 < bytes.length) {
+      out.push(27, 69, 1, 27, 71, bytes[i + 2] & 1); i += 3;
+    } else if (bytes[i] === 27 && bytes[i + 1] === 33 && i + 2 < bytes.length) {
+      out.push(27, 33, bytes[i + 2] | 8); i += 3;
+    } else {
+      out.push(bytes[i++]);
+    }
+  }
+  out.push(27, 71, 0, 27, 69, 0);
+  return Buffer.from(out);
+}
+
+module.exports = { receiptDocument, thermalReceipt };

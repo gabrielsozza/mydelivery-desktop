@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { receiptDocument } = require('../receipt-document');
+const { receiptDocument, thermalReceipt } = require('../receipt-document');
 const { createPrintingService, selectPrinter } = require('../driver-print');
 
 const sample = Buffer.from('\x1b@\x1bt\x03\x1ba\x01\x1b!\x30PEDIDO 123\n\x1b!\0\x1ba\0\x1bE\x012x Pizza\x1bE\0\nTOTAL: R$ 80,00\n\x1dV\x01', 'ascii');
@@ -28,7 +28,8 @@ function setup(t, behavior) {
 test('receipt preserves amounts and formatting and escapes HTML', () => {
   const html = receiptDocument(Buffer.concat([sample, Buffer.from('<script>alert(1)</script>\n')]));
   assert.match(html, /TOTAL: R\$ 80,00/);
-  assert.match(html, /font-size:22px/); assert.match(html, /font-weight:700/);
+  assert.match(html, /font-size:24px/); assert.match(html, /font-size:12.5px/);
+  assert.match(html, /font-weight:700/); assert.match(html, /font-weight:900/);
   assert.match(html, /&lt;script&gt;/); assert.doesNotMatch(html, /<script>/);
 });
 test('fiscal raster QR preserves pixels and validates truncated payloads', () => {
@@ -46,6 +47,28 @@ test('OneNote always uses the installed driver, even with legacy raw preference'
   assert.equal(f.jobs[0].deviceName, 'OneNote (Desktop)'); assert.equal(f.jobs[0].silent, true);
   assert.equal(f.raw.length, 0); assert.equal(f.windows[0].destroyed, true);
   assert.equal(f.windows[0].options.webPreferences.javascript, false);
+});
+test('unconfigured thermal printer keeps direct transport after an app update', async t => {
+  const f = setup(t);
+  f.setPrinters([{name:'MTP-II Bluetooth',isDefault:true}]);
+  const result = await f.service.print(sample);
+  assert.equal(f.service.settings().mode,'auto');
+  assert.equal(result.via,'raw'); assert.equal(f.raw.length,1); assert.equal(f.jobs.length,0);
+});
+test('automatic mode persists and preserves each physical/virtual destination', async t => {
+  const f = setup(t);
+  await f.service.save({printerName:'EPSON TM-T20',width:58,mode:'auto',kitchen:{printerName:'OneNote (Desktop)',width:80,mode:'auto'}});
+  await createPrintingService(f.options).print(sample);
+  assert.equal(f.raw.length,1); assert.equal(f.raw[0][1],'EPSON TM-T20');
+  assert.equal(f.jobs.length,1); assert.equal(f.jobs[0].deviceName,'OneNote (Desktop)');
+});
+test('strong thermal text preserves complete fiscal image data and does not double character width', () => {
+  const raster=Buffer.from([29,118,48,0,1,0,6,0,27,69,0,27,33,0]);
+  const result=thermalReceipt(Buffer.concat([sample,raster]));
+  assert.notEqual(result.indexOf(raster),-1);
+  assert.notEqual(result.indexOf(Buffer.from([27,69,1,27,71,1])), -1);
+  assert.notEqual(result.indexOf(Buffer.from([27,33,8])), -1);
+  assert.throws(()=>thermalReceipt(raster.subarray(0,10)),/incompleta/);
 });
 test('selection persists across restart; removed printer does not silently reroute', async t => {
   const f = setup(t);
