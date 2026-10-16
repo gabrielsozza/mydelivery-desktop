@@ -1,7 +1,7 @@
 {
   "name": "mydelivery-desktop",
   "productName": "MyDelivery",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "MyDelivery Desktop — abre o painel MyDelivery numa janela de app com impressão automática nativa.",
   "author": "MyDelivery",
   "main": "main.js",
@@ -34,6 +34,7 @@
       "print.js",
       "driver-print.js",
       "receipt-document.js",
+      "receipt-address.js",
       "print-settings.html",
       "print-settings.js",
       "build/**/*"

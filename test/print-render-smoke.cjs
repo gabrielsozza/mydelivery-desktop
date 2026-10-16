@@ -51,6 +51,27 @@ app.whenReady().then(async () => {
     assert.ok(rows.every(r=>r.scroll<=r.width+1 && r.whiteSpace==='pre'), 'Names and amounts fit on the same line without clipping');
     fs.writeFileSync(path.join(output,`mana-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
+  const addressText = 'Entrega: Avenida Governador Carlos Lindenberg, 1234, Bloco B, Parque Vitoria, Sao Luis - MA, CEP 65000-000';
+  const addressBytes = Buffer.from('\x1b@' + addressText + '\nTotal: R$ 50,00\n');
+  for (const width of [58,80]) {
+    await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(addressBytes,width)));
+    const bounds = await receipt.webContents.executeJavaScript(`({body:document.body.clientWidth,scroll:document.body.scrollWidth,size:getComputedStyle(document.querySelector('.line span')).fontSize,height:document.querySelector('.line').clientHeight})`);
+    assert.ok(bounds.scroll <= bounds.body + 1);
+    if (width === 80) { assert.equal(bounds.size,'14px'); assert.ok(bounds.height > 30); }
+    fs.writeFileSync(path.join(output,`address-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
+  }
+  const rasters = await require('../receipt-address').renderAddressRasters(BrowserWindow,addressBytes);
+  assert.equal(rasters.size,1);
+  const raster = rasters.get(addressText);
+  assert.equal(raster[4] + raster[5]*256,72);
+  assert.ok(raster[6]+raster[7]*256 > 44);
+  const raw = require('../receipt-document').thermalReceipt(addressBytes,80,rasters);
+  assert.ok(raw.includes(raster));
+  const canvasPreview = receiptDocument(Buffer.concat([Buffer.from([27,64]),raster]),80);
+  await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(canvasPreview));
+  // Raster preview is exported at its native pixel dimensions for inspection.
+  await receipt.webContents.executeJavaScript("document.querySelector('svg').style.width='288px'");
+  fs.writeFileSync(path.join(output,'address-thermal.png'),(await receipt.webContents.capturePage()).toPNG());
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);
   app.exit(0);
