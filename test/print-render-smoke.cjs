@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
     const rows = await receipt.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.line')).map(el=>({text:el.textContent,width:el.clientWidth,scroll:el.scrollWidth,whiteSpace:getComputedStyle(el).whiteSpace}))`);
     assert.equal(rows.length,4);
     assert.match(rows[0].text,/Pizza Tradicional Pequena\s+R\$ 30,00/);
-    assert.ok(rows.every(r=>r.scroll<=r.width+1 && r.whiteSpace==='pre'), 'Names and amounts fit on the same line without clipping');
+    assert.ok(rows.every(r=>r.scroll<=r.width+1 && r.whiteSpace==='pre'), 'Names and amounts fit on the same line without clipping: ' + JSON.stringify({width,rows}));
     fs.writeFileSync(path.join(output,`mana-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   const addressText = 'Entrega: Avenida Governador Carlos Lindenberg, 1234, Bloco B, Parque Vitoria, Sao Luis - MA, CEP 65000-000';

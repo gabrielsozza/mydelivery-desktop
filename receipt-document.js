@@ -120,7 +120,7 @@ function receiptDocument(input, width = 80) {
     const address = width === 80 && isAddress(plain);
     const heading = width === 80 && isHeading(plain);
     // Addresses may flow onto another line; never shrink a long street to tiny text.
-    const scale = address || heading ? 1 : Math.min(1, usablePx / Math.max(1, units * 7.6));
+    const scale = address || heading ? 1 : Math.min(1, usablePx / Math.max(1, units * (width === 80 ? baseFont * 0.61 : 7.6)));
     if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:17px');
     if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:20px').replace(/font-weight:\d+/g,'font-weight:900');
     if (scale < 1) line = line.replace(/font-size:([\d.]+)px/g, (_, px) => 'font-size:' + (Number(px) * scale).toFixed(3) + 'px');
@@ -169,7 +169,7 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm ${width === 58 ? 2 : 4}mm;font-family:${width === 80 ? 'Arial,sans-serif' : "'Courier New',monospace"};font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{line-height:1.3;padding:3px 0}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.35;padding:2px 0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm ${width === 58 ? 2 : 4}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading,.address{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.35;padding:2px 0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use
