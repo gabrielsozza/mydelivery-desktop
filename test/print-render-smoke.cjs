@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
     await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(addressBytes,width)));
     const bounds = await receipt.webContents.executeJavaScript(`({body:document.body.clientWidth,scroll:document.body.scrollWidth,size:getComputedStyle(document.querySelector('.line span')).fontSize,height:document.querySelector('.line').clientHeight})`);
     assert.ok(bounds.scroll <= bounds.body + 1);
-    if (width === 80) { assert.equal(bounds.size,'14px'); assert.ok(bounds.height > 30); }
+    if (width === 80) { assert.equal(bounds.size,'17px'); assert.ok(bounds.height > 30); }
     fs.writeFileSync(path.join(output,`address-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   const rasters = await require('../receipt-address').renderAddressRasters(BrowserWindow,addressBytes);
@@ -72,6 +72,14 @@ app.whenReady().then(async () => {
   // Raster preview is exported at its native pixel dimensions for inspection.
   await receipt.webContents.executeJavaScript("document.querySelector('svg').style.width='288px'");
   fs.writeFileSync(path.join(output,'address-thermal.png'),(await receipt.webContents.capturePage()).toPNG());
+  const complete = Buffer.from('\x1b@\x1ba\x01PARA ENTREGA\n17/10/2026, 15:00:00\nLoja de Teste\n================================\nPedido 12345\n--------------------------------\n\x1ba\0Cliente\nNome: Cliente Teste\nTelefone: (11) 90000-0000\n' + addressText + '\n--------------------------------\nItens\n(1) Pizza Tradicional Pequena\n                       R$ 30,00\n  + Frango com Catupiry\n(1) Refrigerante 1 L     R$ 10,00\n  + Coca-Cola Original\n--------------------------------\nPagamento\nForma de Pagamento: DINHEIRO\n--------------------------------\nSubtotal:               R$ 40,00\nTaxa de entrega:        R$ 10,00\nTotal:                  R$ 50,00\n--------------------------------\n\x1ba\x01Powered By: MyDelivery\n');
+  await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(complete,80)));
+  const full = await receipt.webContents.executeJavaScript(`({width:document.body.clientWidth,scroll:document.body.scrollWidth,headings:[...document.querySelectorAll('.heading span')].map(e=>getComputedStyle(e).fontSize),address:getComputedStyle(document.querySelector('.address span')).fontSize})`);
+  assert.ok(full.scroll <= full.width + 1);
+  assert.equal(full.address,'17px');
+  assert.equal(full.headings.length,5);
+  assert.ok(full.headings.every(size=>size==='20px'));
+  fs.writeFileSync(path.join(output,'complete-80mm.png'),(await receipt.webContents.capturePage()).toPNG());
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);
   app.exit(0);

@@ -28,7 +28,7 @@ function setup(t, behavior) {
 test('receipt preserves amounts and formatting and escapes HTML', () => {
   const html = receiptDocument(Buffer.concat([sample, Buffer.from('<script>alert(1)</script>\n')]));
   assert.match(html, /TOTAL: R\$ 80,00/);
-  assert.match(html, /font-size:24px/); assert.match(html, /font-size:12.5px/);
+  assert.match(html, /font-size:20px/); assert.match(html, /font-size:14px/);
   assert.match(html, /font-weight:700/); assert.match(html, /font-weight:900/);
   assert.match(html, /&lt;script&gt;/); assert.doesNotMatch(html, /<script>/);
 });
@@ -195,7 +195,7 @@ test('80 mm address grows and wraps while 58 mm and pickup keep their previous s
   const bytes = Buffer.from('\x1b@' + text + '\nTotal: R$ 50,00\n');
   const wide = receiptDocument(bytes,80), narrow = receiptDocument(bytes,58);
   assert.match(wide, /class="line address"/);
-  assert.match(wide, /font-size:14px[^>]*>Entrega:/);
+  assert.match(wide, /font-size:17px[^>]*>Entrega:/);
   assert.ok(wide.includes(text));
   assert.doesNotMatch(narrow, /class="line address"/);
   assert.doesNotMatch(receiptDocument(Buffer.from('Entrega: Retirada no local\n'),80), /class="line address"/);
@@ -205,4 +205,14 @@ test('80 mm address grows and wraps while 58 mm and pickup keep their previous s
   assert.ok(raw.includes(raster)); assert.ok(!raw.includes(Buffer.from(text)));
   assert.ok(raw.includes(Buffer.from('Total: R$ 50,00')));
   assert.deepEqual(thermalReceipt(bytes,58,map),thermalReceipt(bytes,58));
+});
+
+test('80 mm headings grow vertically and reset before body text; 58 mm retains native height', () => {
+  const bytes = Buffer.from('\x1b@\x1ba\0\x1bE\x01Cliente\x1bE\0\nNome: Cliente Teste\nItens\nPagamento\n');
+  const wide = thermalReceipt(bytes,80), narrow = thermalReceipt(bytes,58);
+  assert.equal(wide.toString('ascii').split('\x1b!\x18').length - 1,3);
+  assert.ok(wide.includes(Buffer.from('\x1b!\x08\nNome: Cliente Teste')));
+  assert.ok(!narrow.includes(Buffer.from([27,33,24])));
+  assert.match(receiptDocument(bytes,80), /class="line heading"[^>]*><span style="font-weight:900;font-size:20px/);
+  assert.doesNotMatch(receiptDocument(bytes,58), /class="line heading"/);
 });

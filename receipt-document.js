@@ -29,6 +29,9 @@ function receiptLines(input) {
 function isAddress(text) {
   return /^(?:Entrega|End|Endereco):\s*\S/i.test(text) && !/^(?:Entrega|End|Endereco):\s*(?:Retirada no local|-+)\s*$/i.test(text);
 }
+function isHeading(text) {
+  return /^(?:Cliente|Itens|Pagamento|Observacoes|PARA ENTREGA|DELIVERY|RETIRADA NO LOCAL|PEDIDO BALCAO|Pedido\s+#?\d+)$/i.test(text.trim());
+}
 function receiptAddresses(input) {
   return [...new Set(receiptLines(input).filter(line => !line.image && isAddress(line.text)).map(line => line.text))];
 }
@@ -43,6 +46,12 @@ function layoutReceipt(input, width = 80, addressRasters) {
     const line = lines[i];
     if (line.image) { out.push(line.raw); continue; }
     if (width === 80 && addressRasters && addressRasters.has(line.text) && isAddress(line.text)) {
+      // Preserve initialization/codepage commands even when the address is first.
+      for (let j = 0; j < line.raw.length && line.raw[j] === 27;) {
+        const command = line.raw[j + 1], length = command === 64 ? 2 : 3;
+        if (command === 64 || command === 116) out.push(line.raw.subarray(j,j + length));
+        j += length;
+      }
       out.push(Buffer.from([27,97,0]), addressRasters.get(line.text), Buffer.from([10]));
       continue;
     }
@@ -86,34 +95,38 @@ function receiptDocument(input, width = 80) {
   const bytes = layoutReceipt(input, width);
   if (!bytes.length || bytes.length > 2 * 1024 * 1024) throw new Error('Cupom vazio ou grande demais.');
   width = width === 58 ? 58 : 80;
+  const baseFont = width === 80 ? 14 : 12.5;
   let align = 'left', bold = false, size = 0, line = '', text = '', output = '', units = 0;
   const escape = value => value.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   function flushText() {
     if (!text) return;
-    units += text.length * (size & 0x20 ? 24 / 12.5 : 1);
-    line += `<span style="font-weight:${bold ? 900 : 700};font-size:${size & 0x20 ? 24 : 12.5}px;line-height:${size & 0x10 ? 2 : 1.3};-webkit-text-stroke:${bold ? 0.18 : 0}px">${escape(text)}</span>`;
+    units += text.length * (size & 0x20 ? 24 / baseFont : 1);
+    line += `<span style="font-weight:${bold ? 900 : 700};font-size:${size & 0x20 ? 24 : baseFont}px;line-height:${size & 0x10 ? 2 : 1.3};-webkit-text-stroke:${bold ? 0.18 : 0}px">${escape(text)}</span>`;
     text = '';
   }
   function flushLine() {
     flushText();
     // Separators should fill the paper, not wrap into two lines on 58 mm rolls.
     const plain = line.replace(/<[^>]*>/g, '');
-    const item = plain.match(/^(\(\d+(?:[.,]\d+)?\)\s.*?)\s+(R\$\s*[\d.,]+)\s*$/);
+    const item = plain.match(/^(\(\d+(?:[.,]\d+)?\)\s.*?)\s+(R\$\s*[\d.,]+)\s*$/)
+      || (width === 80 && plain.match(/^(\S.*?)\s{2,}(R\$\s*-?[\d.,]+)\s*$/));
     if (item) {
       // Spaces align native fixed-width fonts; driver rows use two columns.
       units = item[1].length + item[2].length + 1;
-      line = '<span style="font-weight:900;font-size:12.5px;-webkit-text-stroke:0.18px">' + item[1] + '</span> <span style="font-weight:900;font-size:12.5px;-webkit-text-stroke:0.18px">' + item[2] + '</span>';
+      line = '<span style="font-weight:900;font-size:' + baseFont + 'px;-webkit-text-stroke:0.18px">' + item[1] + '</span> <span style="font-weight:900;font-size:' + baseFont + 'px;-webkit-text-stroke:0.18px">' + item[2] + '</span>';
     }
     // Match the available paper width without wrapping prices or clipping text.
     const usablePx = (width - (width === 58 ? 4 : 8)) * 96 / 25.4;
     const address = width === 80 && isAddress(plain);
+    const heading = width === 80 && isHeading(plain);
     // Addresses may flow onto another line; never shrink a long street to tiny text.
-    const scale = address ? 1 : Math.min(1, usablePx / Math.max(1, units * 7.6));
-    if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:14px');
+    const scale = address || heading ? 1 : Math.min(1, usablePx / Math.max(1, units * 7.6));
+    if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:17px');
+    if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:20px').replace(/font-weight:\d+/g,'font-weight:900');
     if (scale < 1) line = line.replace(/font-size:([\d.]+)px/g, (_, px) => 'font-size:' + (Number(px) * scale).toFixed(3) + 'px');
     output += /^[-=]{8,}$/.test(plain)
       ? `<div class="separator" style="border-top-style:${plain[0] === '=' ? 'double' : 'dashed'}"></div>`
-      : `<div class="line${address ? ' address' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
+      : `<div class="line${address ? ' address' : heading ? ' heading' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
     line = ''; units = 0;
   }
   function need(i, n) { if (i + n > bytes.length) throw new Error('Cupom incompleto. Tente imprimir novamente.'); }
@@ -156,14 +169,25 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm ${width === 58 ? 2 : 4}mm;font-family:'Courier New',monospace;font-size:12.5px;font-weight:700}.line{white-space:pre;min-height:1.25em}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.35;padding:2px 0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm ${width === 58 ? 2 : 4}mm;font-family:${width === 80 ? 'Arial,sans-serif' : "'Courier New',monospace"};font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{line-height:1.3;padding:3px 0}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.35;padding:2px 0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use
 // emphasis for body text plus double-strike for headings, rather than doubling
 // every character. Raster data (including fiscal QR) must remain byte-identical.
 function thermalReceipt(input, width = 80, addressRasters) {
-  const bytes = layoutReceipt(input, width, addressRasters), out = [27, 69, 1];
+  let bytes = layoutReceipt(input, width, addressRasters);
+  if (width === 80) {
+    bytes = Buffer.concat(receiptLines(bytes).map(line => {
+      if (line.image || !isHeading(line.text)) return line.raw;
+      // Double height only: retain native column width and all original commands.
+      let start = 0;
+      while (line.raw[start] === 27) start += line.raw[start + 1] === 64 ? 2 : 3;
+      const end = line.raw[line.raw.length - 1] === 10 ? line.raw.length - 1 : line.raw.length;
+      return Buffer.concat([line.raw.subarray(0,start),Buffer.from([27,33,16,27,69,1]),line.raw.subarray(start,end),Buffer.from([27,33,0]),line.raw.subarray(end)]);
+    }));
+  }
+  const out = [27, 69, 1];
   for (let i = 0; i < bytes.length;) {
     if (bytes[i] === 29 && bytes[i + 1] === 118 && bytes[i + 2] === 48) {
       if (i + 8 > bytes.length) throw new Error('Imagem de cupom incompleta.');
