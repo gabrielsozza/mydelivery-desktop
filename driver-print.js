@@ -2,7 +2,6 @@
 const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
-const { renderAddressRasters } = require('./receipt-address');
 const { receiptDocument, thermalReceipt } = require('./receipt-document');
 
 const isVirtual = name => /onenote|print to pdf|xps|fax/i.test(name || '');
@@ -49,8 +48,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   async function sendOne(bytes, config, printer) {
     // Preserve pre-1.0.19 thermal transport unless the owner explicitly chose a driver.
     if ((config.mode === 'raw' || config.mode === 'auto') && !isVirtual(printer.name)) {
-      const addresses = await renderAddressRasters(BrowserWindow, bytes, config.width);
-      await rawPrint(thermalReceipt(bytes, config.width, addresses), printer.name);
+      await rawPrint(thermalReceipt(bytes, config.width), printer.name);
       return { ok: true, printerName: printer.name, via: 'raw' };
     }
     // OneNote uses the regular driver path, never the thermal RAW spooler.

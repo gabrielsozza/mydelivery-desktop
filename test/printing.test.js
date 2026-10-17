@@ -195,16 +195,20 @@ test('addresses use legible 80 mm and compact 58 mm sizes without enlarging pick
   const bytes = Buffer.from('\x1b@' + text + '\nTotal: R$ 50,00\n');
   const wide = receiptDocument(bytes,80), narrow = receiptDocument(bytes,58);
   assert.match(wide, /class="line address"/);
-  assert.match(wide, /font-size:17px[^>]*>Entrega:/);
+  assert.match(wide, /font-size:14px[^>]*>Entrega:/);
   assert.ok(wide.includes(text));
-  assert.match(narrow, /font-size:12px[^>]*>Entrega:/);
+  assert.match(narrow, /font-size:12.5px[^>]*>Entrega:/);
   assert.doesNotMatch(receiptDocument(Buffer.from('Entrega: Retirada no local\n'),80), /class="line address"/);
-  const raster = Buffer.from([29,118,48,0,1,0,1,0,128]);
-  const map = new Map([[text,raster]]);
-  const raw = thermalReceipt(bytes,80,map);
-  assert.ok(raw.includes(raster)); assert.ok(!raw.includes(Buffer.from(text)));
-  assert.ok(raw.includes(Buffer.from('Total: R$ 50,00')));
-  assert.ok(thermalReceipt(bytes,58,map).includes(raster));
+  for (const width of [58,80]) {
+    const raw = thermalReceipt(bytes,width);
+    assert.ok(!raw.includes(Buffer.from([29,118,48])), 'address must never become a clipped raster');
+    const rows = visibleRows(raw);
+    assert.equal(rows.slice(0,-1).join(' '),text);
+    assert.ok(rows.slice(0,-1).every(row=>row.length <= (width === 58 ? 32 : 48)));
+    assert.equal(rows.at(-1),'Total: R$ 50,00');
+    assert.ok(raw.includes(Buffer.from([27,33,8])), 'normal size, bold body font');
+    assert.ok(!raw.includes(Buffer.from([27,33,24])), 'no enlarged address');
+  }
 });
 
 test('80 mm headings grow vertically and reset before body text; 58 mm retains native height', () => {

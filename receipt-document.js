@@ -32,10 +32,7 @@ function isAddress(text) {
 function isHeading(text) {
   return /^(?:Cliente|Itens|Pagamento|Observacoes|PARA ENTREGA|DELIVERY|RETIRADA NO LOCAL|PEDIDO BALCAO|Pedido\s+#?\d+)$/i.test(text.trim());
 }
-function receiptAddresses(input) {
-  return [...new Set(receiptLines(input).filter(line => !line.image && isAddress(line.text)).map(line => line.text))];
-}
-function layoutReceipt(input, width = 80, addressRasters) {
+function layoutReceipt(input, width = 80) {
   const lines = receiptLines(input);
   const columns = width === 58 ? 32 : 48, compactColumns = width === 58 ? 42 : 64;
   const out = [];
@@ -45,16 +42,6 @@ function layoutReceipt(input, width = 80, addressRasters) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.image) { out.push(line.raw); continue; }
-    if (addressRasters && addressRasters.has(line.text) && isAddress(line.text)) {
-      // Preserve initialization/codepage commands even when the address is first.
-      for (let j = 0; j < line.raw.length && line.raw[j] === 27;) {
-        const command = line.raw[j + 1], length = command === 64 ? 2 : 3;
-        if (command === 64 || command === 116) out.push(line.raw.subarray(j,j + length));
-        j += length;
-      }
-      out.push(Buffer.from([27,97,0]), addressRasters.get(line.text), Buffer.from([10]));
-      continue;
-    }
     if (/^\(\d+(?:[.,]\d+)?\)\s/.test(line.text)) {
       let text = line.text;
       // Old builder placed the amount alone on the following line.
@@ -121,7 +108,7 @@ function receiptDocument(input, width = 80) {
     const heading = width === 80 && isHeading(plain);
     // Addresses may flow onto another line; never shrink a long street to tiny text.
     const scale = address || heading ? 1 : Math.min(1, usablePx / Math.max(1, units * (width === 80 ? baseFont * 0.61 : 7.6)));
-    if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (width === 58 ? 12 : 17) + 'px');
+    if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + baseFont + 'px');
     if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:20px').replace(/font-weight:\d+/g,'font-weight:900');
     if (scale < 1) line = line.replace(/font-size:([\d.]+)px/g, (_, px) => 'font-size:' + (Number(px) * scale).toFixed(3) + 'px');
     output += /^[-=]{8,}$/.test(plain)
@@ -169,14 +156,30 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm ${width === 58 ? 2 : 4}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading,.address{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.35;padding:2px 0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm ${width === 58 ? 2 : 4}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use
 // emphasis for body text plus double-strike for headings, rather than doubling
 // every character. Raster data (including fiscal QR) must remain byte-identical.
-function thermalReceipt(input, width = 80, addressRasters) {
-  let bytes = layoutReceipt(input, width, addressRasters);
+function thermalReceipt(input, width = 80) {
+  let bytes = layoutReceipt(input, width);
+  // Addresses are ordinary printer text, just like name and phone. Native text
+  // also wraps at the physical head width, unlike a wide raster that gets cut.
+  bytes = Buffer.concat(receiptLines(bytes).map(line => {
+    if (line.image || !isAddress(line.text)) return line.raw;
+    const columns = width === 58 ? 32 : 48, rows = [];
+    let rest = line.text.trim();
+    while (rest.length > columns) {
+      let cut = rest.lastIndexOf(' ', columns);
+      if (cut < 1) cut = columns;
+      rows.push(rest.slice(0,cut)); rest = rest.slice(cut).trimStart();
+    }
+    if (rest) rows.push(rest);
+    let start = 0;
+    while (line.raw[start] === 27) start += line.raw[start + 1] === 64 ? 2 : 3;
+    return Buffer.concat([line.raw.subarray(0,start),Buffer.from('\x1ba\0\x1b!\0\x1bE\0' + rows.join('\n') + '\n','ascii')]);
+  }));
   if (width === 80) {
     bytes = Buffer.concat(receiptLines(bytes).map(line => {
       if (line.image || !isHeading(line.text)) return line.raw;
@@ -209,4 +212,4 @@ function thermalReceipt(input, width = 80, addressRasters) {
   return Buffer.from(out);
 }
 
-module.exports = { receiptDocument, thermalReceipt, layoutReceipt, receiptAddresses };
+module.exports = { receiptDocument, thermalReceipt, layoutReceipt };
