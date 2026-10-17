@@ -190,21 +190,21 @@ test('cashier 80 mm and kitchen 58 mm format independently without losing amount
   assert.equal(visibleRows(f.raw[1][0])[0].length,42);
 });
 
-test('80 mm address grows and wraps while 58 mm and pickup keep their previous sizing', () => {
+test('addresses use legible 80 mm and compact 58 mm sizes without enlarging pickup labels', () => {
   const text = 'Entrega: Avenida Governador Carlos Lindenberg, 1234, Bloco B, Parque Vitoria, Sao Luis - MA, CEP 65000-000';
   const bytes = Buffer.from('\x1b@' + text + '\nTotal: R$ 50,00\n');
   const wide = receiptDocument(bytes,80), narrow = receiptDocument(bytes,58);
   assert.match(wide, /class="line address"/);
   assert.match(wide, /font-size:17px[^>]*>Entrega:/);
   assert.ok(wide.includes(text));
-  assert.doesNotMatch(narrow, /class="line address"/);
+  assert.match(narrow, /font-size:12px[^>]*>Entrega:/);
   assert.doesNotMatch(receiptDocument(Buffer.from('Entrega: Retirada no local\n'),80), /class="line address"/);
   const raster = Buffer.from([29,118,48,0,1,0,1,0,128]);
   const map = new Map([[text,raster]]);
   const raw = thermalReceipt(bytes,80,map);
   assert.ok(raw.includes(raster)); assert.ok(!raw.includes(Buffer.from(text)));
   assert.ok(raw.includes(Buffer.from('Total: R$ 50,00')));
-  assert.deepEqual(thermalReceipt(bytes,58,map),thermalReceipt(bytes,58));
+  assert.ok(thermalReceipt(bytes,58,map).includes(raster));
 });
 
 test('80 mm headings grow vertically and reset before body text; 58 mm retains native height', () => {

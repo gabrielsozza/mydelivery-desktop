@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
     await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(addressBytes,width)));
     const bounds = await receipt.webContents.executeJavaScript(`({body:document.body.clientWidth,scroll:document.body.scrollWidth,size:getComputedStyle(document.querySelector('.line span')).fontSize,height:document.querySelector('.line').clientHeight})`);
     assert.ok(bounds.scroll <= bounds.body + 1);
-    if (width === 80) { assert.equal(bounds.size,'17px'); assert.ok(bounds.height > 30); }
+    assert.equal(bounds.size,width === 80 ? '17px' : '12px'); assert.ok(bounds.height > 30);
     fs.writeFileSync(path.join(output,`address-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   const rasters = await require('../receipt-address').renderAddressRasters(BrowserWindow,addressBytes);
@@ -80,6 +80,14 @@ app.whenReady().then(async () => {
   assert.equal(full.headings.length,5);
   assert.ok(full.headings.every(size=>size==='20px'));
   fs.writeFileSync(path.join(output,'complete-80mm.png'),(await receipt.webContents.capturePage()).toPNG());
+  const narrowRasters = await require('../receipt-address').renderAddressRasters(BrowserWindow,addressBytes,58);
+  const compactRaster = narrowRasters.get(addressText);
+  assert.equal(compactRaster[4] + compactRaster[5]*256,48);
+  assert.ok(compactRaster[6]+compactRaster[7]*256 < raster[6]+raster[7]*256);
+  await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(complete,58)));
+  const compact = await receipt.webContents.executeJavaScript(`({width:document.body.clientWidth,scroll:document.body.scrollWidth,size:getComputedStyle(document.querySelector('.address span')).fontSize})`);
+  assert.ok(compact.scroll <= compact.width + 1); assert.equal(compact.size,'12px');
+  fs.writeFileSync(path.join(output,'complete-58mm.png'),(await receipt.webContents.capturePage()).toPNG());
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);
   app.exit(0);

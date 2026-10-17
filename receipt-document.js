@@ -45,7 +45,7 @@ function layoutReceipt(input, width = 80, addressRasters) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.image) { out.push(line.raw); continue; }
-    if (width === 80 && addressRasters && addressRasters.has(line.text) && isAddress(line.text)) {
+    if (addressRasters && addressRasters.has(line.text) && isAddress(line.text)) {
       // Preserve initialization/codepage commands even when the address is first.
       for (let j = 0; j < line.raw.length && line.raw[j] === 27;) {
         const command = line.raw[j + 1], length = command === 64 ? 2 : 3;
@@ -117,11 +117,11 @@ function receiptDocument(input, width = 80) {
     }
     // Match the available paper width without wrapping prices or clipping text.
     const usablePx = (width - (width === 58 ? 4 : 8)) * 96 / 25.4;
-    const address = width === 80 && isAddress(plain);
+    const address = isAddress(plain);
     const heading = width === 80 && isHeading(plain);
     // Addresses may flow onto another line; never shrink a long street to tiny text.
     const scale = address || heading ? 1 : Math.min(1, usablePx / Math.max(1, units * (width === 80 ? baseFont * 0.61 : 7.6)));
-    if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:17px');
+    if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (width === 58 ? 12 : 17) + 'px');
     if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:20px').replace(/font-weight:\d+/g,'font-weight:900');
     if (scale < 1) line = line.replace(/font-size:([\d.]+)px/g, (_, px) => 'font-size:' + (Number(px) * scale).toFixed(3) + 'px');
     output += /^[-=]{8,}$/.test(plain)

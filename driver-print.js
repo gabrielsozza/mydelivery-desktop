@@ -49,7 +49,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   async function sendOne(bytes, config, printer) {
     // Preserve pre-1.0.19 thermal transport unless the owner explicitly chose a driver.
     if ((config.mode === 'raw' || config.mode === 'auto') && !isVirtual(printer.name)) {
-      const addresses = config.width === 80 ? await renderAddressRasters(BrowserWindow, bytes) : null;
+      const addresses = await renderAddressRasters(BrowserWindow, bytes, config.width);
       await rawPrint(thermalReceipt(bytes, config.width, addresses), printer.name);
       return { ok: true, printerName: printer.name, via: 'raw' };
     }
