@@ -168,7 +168,7 @@ test('Mana photo: quantity, full pizza name and amount share one line on 58 and 
     const result = layoutReceipt(manaReceipt,width), rows = visibleRows(result);
     assert.equal(rows.length,4);
     assert.match(rows[0],/^\(1\) Pizza Tradicional Pequena\s+R\$ 30,00$/);
-    assert.equal(rows[1],'  + Frango com Catupiry (R$ 30,00)');
+    assert.match(rows[1],/^  \+ Frango com Catupiry\s+\(R\$ 30,00\)$/);
     assert.match(rows[2],/^\(1\) Refrigerante 1 L\s+R\$ 10,00$/);
     assert.ok(rows.every(r=>r.length <= (width === 58 ? 40 : 44)));
     assert.equal(result.includes(Buffer.from([27,33,1])),width === 58);
@@ -186,8 +186,8 @@ test('cashier 80 mm and kitchen 58 mm format independently without losing amount
   await f.service.print(manaReceipt);
   assert.equal(f.raw.length,2);
   for(const [bytes] of f.raw) assert.match(visibleRows(bytes)[0],/Pizza Tradicional Pequena\s+R\$ 30,00/);
-  assert.equal(visibleRows(f.raw[0][0])[0].length,44);
-  assert.equal(visibleRows(f.raw[1][0])[0].length,40);
+  assert.equal(visibleRows(f.raw[0][0])[0].length,38);
+  assert.equal(visibleRows(f.raw[1][0])[0].length,38);
 });
 
 test('addresses use legible 80 mm and compact 58 mm sizes without enlarging pickup labels', () => {
@@ -231,5 +231,15 @@ test('80 mm headings grow vertically and reset before body text; 58 mm retains n
     assert.equal(rows.slice(0,firstItem).join(' '),name);
     assert.match(rows.at(-1),/Total:\s+R\$ 42,00$/);
     assert.equal(rows.filter(row=>/R\$/.test(row)).length,4);
+  }
+});
+
+test('Talentos: item, flavor and total cents retain a dedicated right gutter', () => {
+  const receipt = Buffer.from('(1) Media                   R$ 37,00\n  + Frango Com Catupiry (R$ 18,50)\n  + Calabresa (R$ 18,50)\nSubtotal: R$ 37,00\nTaxa de entrega: R$ 10,00\nTotal: R$ 47,00\n');
+  for (const width of [58,80]) {
+    const rows = visibleRows(thermalReceipt(receipt,width));
+    assert.equal(rows.length,6);
+    assert.deepEqual(rows.map(r=>r.match(/R\$ [\d.,]+/)[0]), ['R$ 37,00','R$ 18,50','R$ 18,50','R$ 37,00','R$ 10,00','R$ 47,00']);
+    for (const r of rows) assert.ok(r.length <= (width === 58 && r.includes('Frango') ? 38 : width === 58 ? 28 : 38), r);
   }
 });

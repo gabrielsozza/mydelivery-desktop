@@ -88,6 +88,18 @@ app.whenReady().then(async () => {
     assert.ok(bounds.spans.filter(span=>/^R\$/.test(span.text)).every(span=>span.scroll<=span.width+1),'Prices retain all cents inside the print area');
     fs.writeFileSync(path.join(output,`safe-width-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
+  const talentos = Buffer.from('Cliente\nNome: Cliente Teste\nEntrega: Rua de Teste, 123 - Parque Jair\nItens\n(1) Media R$ 37,00\n  + Frango Com Catupiry (R$ 18,50)\n  + Calabresa (R$ 18,50)\nPagamento\nSubtotal: R$ 37,00\nTaxa de entrega: R$ 10,00\nTotal: R$ 47,00\n');
+  for (const width of [58,80]) {
+    await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(talentos,width)));
+    const prices = await receipt.webContents.executeJavaScript(`(() => {
+      const body=document.body.getBoundingClientRect(), style=getComputedStyle(document.body);
+      return [...document.querySelectorAll('.amount-row>span:last-child')].map(el=>({text:el.textContent,gutter:body.right-parseFloat(style.paddingRight)-el.getBoundingClientRect().right,width:el.clientWidth,scroll:el.scrollWidth}));
+    })()`);
+    assert.equal(prices.length,6);
+    assert.deepEqual(prices.map(p=>p.text),['R$ 37,00','(R$ 18,50)','(R$ 18,50)','R$ 37,00','R$ 10,00','R$ 47,00']);
+    assert.ok(prices.every(p=>p.gutter >= (width === 58 ? 3 : 6)*96/25.4-1 && p.scroll<=p.width+1),JSON.stringify(prices));
+    fs.writeFileSync(path.join(output,`talentos-prices-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
+  }
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);
   app.exit(0);

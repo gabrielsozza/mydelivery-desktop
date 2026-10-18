@@ -35,6 +35,9 @@ function isHeading(text) {
 function layoutReceipt(input, width = 80) {
   const lines = receiptLines(input);
   const columns = width === 58 ? 30 : 44, compactColumns = width === 58 ? 40 : 58;
+  // Leave a dedicated right gutter for amounts: some thermal drivers clip
+  // the final columns even when the rest of the receipt fits their paper.
+  const moneyColumns = width === 58 ? 28 : 38, compactMoneyColumns = width === 58 ? 38 : 50;
   const out = [];
   function row(text, compact, bold) {
     return Buffer.from('\x1ba\0\x1b!' + (compact ? '\x01' : '\0') + '\x1bE' + (bold ? '\x01' : '\0') + text + '\x1b!\0\x1bE\0\n','ascii');
@@ -54,8 +57,8 @@ function layoutReceipt(input, width = 80) {
           j += length;
         }
         let name = match[1].trim(), amount = match[2];
-        const compact = name.length + amount.length + 1 > columns;
-        const limit = compact ? compactColumns : columns;
+        const compact = name.length + amount.length + 1 > moneyColumns;
+        const limit = compact ? compactMoneyColumns : moneyColumns;
         // Exceptionally long names retain all information; the amount stays
         // with the final name segment instead of becoming an orphan row.
         const available = Math.max(1,limit - amount.length - 1);
@@ -68,6 +71,20 @@ function layoutReceipt(input, width = 80) {
         continue;
       }
     }
+    const modifier = line.text.match(/^(\s*\+.*?)\s+(\(R\$\s*-?[\d.,]+\))\s*$/);
+    if (modifier) {
+      let name = modifier[1].trimEnd();
+      const amount = modifier[2], compact = name.length + amount.length + 1 > moneyColumns;
+      const limit = compact ? compactMoneyColumns : moneyColumns;
+      const available = Math.max(1, limit - amount.length - 1);
+      while (name.length > available) {
+        let cut = name.lastIndexOf(' ', available);
+        if (cut < 3) cut = available;
+        out.push(row(name.slice(0,cut),compact,false)); name = name.slice(cut).trimStart();
+      }
+      out.push(row(name + ' '.repeat(Math.max(1,limit-name.length-amount.length)) + amount,compact,false));
+      continue;
+    }
     if (/^\s+\+ /.test(line.text) && line.text.length > columns && line.text.length <= compactColumns) {
       out.push(row(line.text,true,false)); continue;
     }
@@ -78,7 +95,7 @@ function layoutReceipt(input, width = 80) {
         if (command === 64 || command === 116) out.push(line.raw.subarray(j,j + length));
         j += length;
       }
-      out.push(row(total[1] + ' '.repeat(Math.max(1, columns - total[1].length - total[2].length)) + total[2],false,line.raw.includes(Buffer.from([27,69,1]))));
+      out.push(row(total[1] + ' '.repeat(Math.max(1, moneyColumns - total[1].length - total[2].length)) + total[2],false,line.raw.includes(Buffer.from([27,69,1]))));
       continue;
     }
     out.push(line.raw);
@@ -108,7 +125,8 @@ function receiptDocument(input, width = 80) {
     // Separators should fill the paper, not wrap into two lines on 58 mm rolls.
     const plain = line.replace(/<[^>]*>/g, '');
     const item = plain.match(/^(\(\d+(?:[.,]\d+)?\)\s.*?)\s+(R\$\s*[\d.,]+)\s*$/)
-      || (plain.match(/^(\S.*?)\s{2,}(R\$\s*-?[\d.,]+)\s*$/));
+      || plain.match(/^(.*?)\s{2,}(R\$\s*-?[\d.,]+)\s*$/)
+      || plain.match(/^(.*?)\s+(\(R\$\s*-?[\d.,]+\))\s*$/);
     if (item) {
       // Spaces align native fixed-width fonts; driver rows use two columns.
       units = item[1].length + item[2].length + 1;
@@ -169,7 +187,7 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.amount-row{gap:4px}.amount-row>span:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body data-paper-width="${width}">${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body data-paper-width="${width}">${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use
