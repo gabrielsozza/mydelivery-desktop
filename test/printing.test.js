@@ -27,7 +27,7 @@ function setup(t, behavior) {
 
 test('receipt preserves amounts and formatting and escapes HTML', () => {
   const html = receiptDocument(Buffer.concat([sample, Buffer.from('<script>alert(1)</script>\n')]));
-  assert.match(html, /TOTAL: R\$ 80,00/);
+  assert.match(html.replace(/<[^>]*>/g,''), /TOTAL: R\$ 80,00/);
   assert.match(html, /font-size:20px/); assert.match(html, /font-size:14px/);
   assert.match(html, /font-weight:700/); assert.match(html, /font-weight:900/);
   assert.match(html, /&lt;script&gt;/); assert.doesNotMatch(html, /<script>/);
@@ -75,7 +75,7 @@ test('selection persists across restart; removed printer does not silently rerou
   await f.service.save({ printerName: 'EPSON TM-T20', width: 58, mode: 'driver' });
   const restarted = createPrintingService(f.options);
   await restarted.print(sample);
-  assert.equal(f.jobs[0].deviceName, 'EPSON TM-T20'); assert.match(f.windows[0].html, /width:58mm/);
+  assert.equal(f.jobs[0].deviceName, 'EPSON TM-T20'); assert.match(f.windows[0].html, /data-paper-width="58"/);
   f.setPrinters([{ name:'OneNote (Desktop)', isDefault:true }]);
   await assert.rejects(restarted.print(sample), /não está instalada/);
   assert.equal(f.jobs.length,1);
@@ -119,7 +119,7 @@ test('cashier and kitchen each receive one copy with independent paper settings'
   const result = await restarted.print(sample);
   assert.equal(result.ok,true);
   assert.deepEqual(f.jobs.map(j=>j.deviceName),['EPSON TM-T20','OneNote (Desktop)']);
-  assert.match(f.windows[0].html,/width:80mm/); assert.match(f.windows[1].html,/width:58mm/);
+  assert.match(f.windows[0].html,/data-paper-width="80"/); assert.match(f.windows[1].html,/data-paper-width="58"/);
 });
 test('same printer in cashier and kitchen receives only one copy', async t => {
   const f = setup(t);
@@ -170,7 +170,7 @@ test('Mana photo: quantity, full pizza name and amount share one line on 58 and 
     assert.match(rows[0],/^\(1\) Pizza Tradicional Pequena\s+R\$ 30,00$/);
     assert.equal(rows[1],'  + Frango com Catupiry (R$ 30,00)');
     assert.match(rows[2],/^\(1\) Refrigerante 1 L\s+R\$ 10,00$/);
-    assert.ok(rows.every(r=>r.length <= (width === 58 ? 42 : 48)));
+    assert.ok(rows.every(r=>r.length <= (width === 58 ? 40 : 44)));
     assert.equal(result.includes(Buffer.from([27,33,1])),width === 58);
     assert.deepEqual(layoutReceipt(result,width), result, 'layout is stable when printed again');
   }
@@ -186,8 +186,8 @@ test('cashier 80 mm and kitchen 58 mm format independently without losing amount
   await f.service.print(manaReceipt);
   assert.equal(f.raw.length,2);
   for(const [bytes] of f.raw) assert.match(visibleRows(bytes)[0],/Pizza Tradicional Pequena\s+R\$ 30,00/);
-  assert.equal(visibleRows(f.raw[0][0])[0].length,48);
-  assert.equal(visibleRows(f.raw[1][0])[0].length,42);
+  assert.equal(visibleRows(f.raw[0][0])[0].length,44);
+  assert.equal(visibleRows(f.raw[1][0])[0].length,40);
 });
 
 test('addresses use legible 80 mm and compact 58 mm sizes without enlarging pickup labels', () => {
@@ -204,8 +204,8 @@ test('addresses use legible 80 mm and compact 58 mm sizes without enlarging pick
     assert.ok(!raw.includes(Buffer.from([29,118,48])), 'address must never become a clipped raster');
     const rows = visibleRows(raw);
     assert.equal(rows.slice(0,-1).join(' '),text);
-    assert.ok(rows.slice(0,-1).every(row=>row.length <= (width === 58 ? 32 : 48)));
-    assert.equal(rows.at(-1),'Total: R$ 50,00');
+    assert.ok(rows.slice(0,-1).every(row=>row.length <= (width === 58 ? 30 : 44)));
+    assert.match(rows.at(-1),/^Total:\s+R\$ 50,00$/);
     assert.ok(raw.includes(Buffer.from([27,33,8])), 'normal size, bold body font');
     assert.ok(!raw.includes(Buffer.from([27,33,24])), 'no enlarged address');
   }
@@ -215,8 +215,21 @@ test('80 mm headings grow vertically and reset before body text; 58 mm retains n
   const bytes = Buffer.from('\x1b@\x1ba\0\x1bE\x01Cliente\x1bE\0\nNome: Cliente Teste\nItens\nPagamento\n');
   const wide = thermalReceipt(bytes,80), narrow = thermalReceipt(bytes,58);
   assert.equal(wide.toString('ascii').split('\x1b!\x18').length - 1,3);
-  assert.ok(wide.includes(Buffer.from('\x1b!\x08\nNome: Cliente Teste')));
+  assert.match(wide.toString('ascii'), /\x1b!\x08(?:\x1b[EG][\s\S])*Nome: Cliente Teste/);
   assert.ok(!narrow.includes(Buffer.from([27,33,24])));
   assert.match(receiptDocument(bytes,80), /class="line heading"[^>]*><span style="font-weight:900;font-size:20px/);
   assert.doesNotMatch(receiptDocument(bytes,58), /class="line heading"/);
+});
+
+ test('long customer names and right-aligned amounts stay inside safe native columns', () => {
+  const name = 'Nome: Cliente Teste Com Sobrenome Muito Longo Para Conferencia';
+  const bytes = Buffer.from('\x1b@' + name + '\n(1) Media                   R$ 37,00\nSubtotal: R$ 37,00\nTaxa de entrega: R$ 5,00\nTotal: R$ 42,00\n');
+  for (const width of [58,80]) {
+    const rows = visibleRows(thermalReceipt(bytes,width));
+    assert.ok(rows.every(row=>row.length <= (width === 58 ? 30 : 44)));
+    const firstItem = rows.findIndex(row=>row.startsWith('(1)'));
+    assert.equal(rows.slice(0,firstItem).join(' '),name);
+    assert.match(rows.at(-1),/Total:\s+R\$ 42,00$/);
+    assert.equal(rows.filter(row=>/R\$/.test(row)).length,4);
+  }
 });

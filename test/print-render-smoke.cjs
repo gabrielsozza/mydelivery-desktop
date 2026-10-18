@@ -73,6 +73,21 @@ app.whenReady().then(async () => {
   const compact = await receipt.webContents.executeJavaScript(`({width:document.body.clientWidth,scroll:document.body.scrollWidth,size:getComputedStyle(document.querySelector('.address span')).fontSize})`);
   assert.ok(compact.scroll <= compact.width + 1); assert.equal(compact.size,'12.5px');
   fs.writeFileSync(path.join(output,'complete-58mm.png'),(await receipt.webContents.capturePage()).toPNG());
+  const longCustomer = complete.toString('ascii').replace('Nome: Cliente Teste','Nome: Cliente Teste Com Sobrenome Muito Longo Para Conferencia');
+  for (const width of [58,80]) {
+    await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(Buffer.from(longCustomer),width)));
+    const bounds = await receipt.webContents.executeJavaScript(`(() => {
+      const body=document.body.getBoundingClientRect(), style=getComputedStyle(document.body);
+      return {width:body.width,bodyFont:style.fontSize,nameFont:getComputedStyle(document.querySelector('.customer span')).fontSize,
+        spans:[...document.querySelectorAll('.line span')].map(el=>({text:el.textContent,right:el.getBoundingClientRect().right,scroll:el.scrollWidth,width:el.clientWidth})),
+        safeRight:body.right-parseFloat(style.paddingRight)};
+    })()`);
+    assert.ok(bounds.width <= (width === 58 ? 48 : 72)*96/25.4 + 1);
+    assert.equal(bounds.nameFont,bounds.bodyFont,'Names wrap without shrinking the approved body type');
+    assert.ok(bounds.spans.every(span=>span.right<=bounds.safeRight+1),JSON.stringify(bounds));
+    assert.ok(bounds.spans.filter(span=>/^R\$/.test(span.text)).every(span=>span.scroll<=span.width+1),'Prices retain all cents inside the print area');
+    fs.writeFileSync(path.join(output,`safe-width-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
+  }
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);
   app.exit(0);

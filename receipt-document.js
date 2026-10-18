@@ -34,7 +34,7 @@ function isHeading(text) {
 }
 function layoutReceipt(input, width = 80) {
   const lines = receiptLines(input);
-  const columns = width === 58 ? 32 : 48, compactColumns = width === 58 ? 42 : 64;
+  const columns = width === 58 ? 30 : 44, compactColumns = width === 58 ? 40 : 58;
   const out = [];
   function row(text, compact, bold) {
     return Buffer.from('\x1ba\0\x1b!' + (compact ? '\x01' : '\0') + '\x1bE' + (bold ? '\x01' : '\0') + text + '\x1b!\0\x1bE\0\n','ascii');
@@ -71,6 +71,16 @@ function layoutReceipt(input, width = 80) {
     if (/^\s+\+ /.test(line.text) && line.text.length > columns && line.text.length <= compactColumns) {
       out.push(row(line.text,true,false)); continue;
     }
+    const total = line.text.match(/^((?:Subtotal|Total|Taxa de entrega|Desconto|Troco(?: para)?):)\s+(R\$\s*-?[\d.,]+)\s*$/i);
+    if (total) {
+      for (let j = 0; j < line.raw.length && line.raw[j] === 27;) {
+        const command = line.raw[j + 1], length = command === 64 ? 2 : 3;
+        if (command === 64 || command === 116) out.push(line.raw.subarray(j,j + length));
+        j += length;
+      }
+      out.push(row(total[1] + ' '.repeat(Math.max(1, columns - total[1].length - total[2].length)) + total[2],false,line.raw.includes(Buffer.from([27,69,1]))));
+      continue;
+    }
     out.push(line.raw);
   }
   return Buffer.concat(out);
@@ -82,6 +92,8 @@ function receiptDocument(input, width = 80) {
   const bytes = layoutReceipt(input, width);
   if (!bytes.length || bytes.length > 2 * 1024 * 1024) throw new Error('Cupom vazio ou grande demais.');
   width = width === 58 ? 58 : 80;
+  const printableWidth = width === 58 ? 48 : 72;
+  const sidePadding = width === 58 ? 1.5 : 2;
   const baseFont = width === 80 ? 14 : 12.5;
   let align = 'left', bold = false, size = 0, line = '', text = '', output = '', units = 0;
   const escape = value => value.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -96,24 +108,25 @@ function receiptDocument(input, width = 80) {
     // Separators should fill the paper, not wrap into two lines on 58 mm rolls.
     const plain = line.replace(/<[^>]*>/g, '');
     const item = plain.match(/^(\(\d+(?:[.,]\d+)?\)\s.*?)\s+(R\$\s*[\d.,]+)\s*$/)
-      || (width === 80 && plain.match(/^(\S.*?)\s{2,}(R\$\s*-?[\d.,]+)\s*$/));
+      || (plain.match(/^(\S.*?)\s{2,}(R\$\s*-?[\d.,]+)\s*$/));
     if (item) {
       // Spaces align native fixed-width fonts; driver rows use two columns.
       units = item[1].length + item[2].length + 1;
       line = '<span style="font-weight:900;font-size:' + baseFont + 'px;-webkit-text-stroke:0.18px">' + item[1] + '</span> <span style="font-weight:900;font-size:' + baseFont + 'px;-webkit-text-stroke:0.18px">' + item[2] + '</span>';
     }
     // Match the available paper width without wrapping prices or clipping text.
-    const usablePx = (width - (width === 58 ? 4 : 8)) * 96 / 25.4;
+    const usablePx = (printableWidth - sidePadding * 2) * 96 / 25.4;
     const address = isAddress(plain);
+    const customer = /^(?:Nome|Telefone|Fone|Obs|Observacao|Referencia|Forma de Pagamento):/i.test(plain);
     const heading = width === 80 && isHeading(plain);
     // Addresses may flow onto another line; never shrink a long street to tiny text.
-    const scale = address || heading ? 1 : Math.min(1, usablePx / Math.max(1, units * (width === 80 ? baseFont * 0.61 : 7.6)));
+    const scale = address || customer || heading || item ? 1 : Math.min(1, usablePx / Math.max(1, units * (width === 80 ? baseFont * 0.61 : 7.6)));
     if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + baseFont + 'px');
     if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:20px').replace(/font-weight:\d+/g,'font-weight:900');
     if (scale < 1) line = line.replace(/font-size:([\d.]+)px/g, (_, px) => 'font-size:' + (Number(px) * scale).toFixed(3) + 'px');
     output += /^[-=]{8,}$/.test(plain)
       ? `<div class="separator" style="border-top-style:${plain[0] === '=' ? 'double' : 'dashed'}"></div>`
-      : `<div class="line${address ? ' address' : heading ? ' heading' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
+      : `<div class="line${address ? ' address' : customer ? ' customer' : heading ? ' heading' : ''}${item ? ' amount-row' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
     line = ''; units = 0;
   }
   function need(i, n) { if (i + n > bytes.length) throw new Error('Cupom incompleto. Tente imprimir novamente.'); }
@@ -156,7 +169,7 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${width}mm;padding:3mm ${width === 58 ? 2 : 4}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body>${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.amount-row{gap:4px}.amount-row>span:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body data-paper-width="${width}">${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use
@@ -167,8 +180,8 @@ function thermalReceipt(input, width = 80) {
   // Addresses are ordinary printer text, just like name and phone. Native text
   // also wraps at the physical head width, unlike a wide raster that gets cut.
   bytes = Buffer.concat(receiptLines(bytes).map(line => {
-    if (line.image || !isAddress(line.text)) return line.raw;
-    const columns = width === 58 ? 32 : 48, rows = [];
+    if (line.image || !/^(?:Entrega|End|Endereco|Nome|Telefone|Fone|Obs|Observacao|Referencia|Forma de Pagamento):/i.test(line.text)) return line.raw;
+    const columns = width === 58 ? 30 : 44, rows = [];
     let rest = line.text.trim();
     while (rest.length > columns) {
       let cut = rest.lastIndexOf(' ', columns);
