@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { receiptDocument, thermalReceipt, layoutReceipt } = require('../receipt-document');
+const { receiptDocument, thermalReceipt, layoutReceipt, kitchenReceipt } = require('../receipt-document');
 const { createPrintingService, selectPrinter } = require('../driver-print');
 
 const sample = Buffer.from('\x1b@\x1bt\x03\x1ba\x01\x1b!\x30PEDIDO 123\n\x1b!\0\x1ba\0\x1bE\x012x Pizza\x1bE\0\nTOTAL: R$ 80,00\n\x1dV\x01', 'ascii');
@@ -112,6 +112,64 @@ test('receipt emitted by the live web builder retains items, total and fiscal QR
   assert.match(html, /aria-label="QR Code da nota fiscal"/);
 });
 
+test('kitchen removes customer and payment sections from the live receipt, preserving items and fiscal raster', () => {
+  const original = Buffer.from(require('./fixtures/receipt.json'));
+  const kitchen = kitchenReceipt(original);
+  for (const width of [58,80]) {
+    for (const rendered of [receiptDocument(kitchen,width),thermalReceipt(kitchen,width).toString('ascii')]) {
+      for (const value of ['DELIVERY','Pedido 123','Pizza Calabresa','Sem cebola','Borda de catupiry','DANFE NFC-e']) assert.ok(rendered.includes(value),value);
+      for (const value of ['Cliente de teste','(00) 00000-0000','Rua de teste','Pagamento','PIX','R$','Subtotal:','Taxa de entrega:','Total:']) assert.ok(!rendered.includes(value),value);
+    }
+  }
+  assert.deepEqual(kitchenReceipt(kitchen),kitchen);
+  assert.ok(original.includes(Buffer.from('Cliente de teste')), 'original cashier bytes remain unchanged');
+  assert.match(receiptDocument(kitchen),/aria-label="QR Code da nota fiscal"/);
+});
+
+function kitchenOrder({type='DELIVERY',opa=false}={}) {
+  const sep='--------------------------------\n';
+  const items='Itens\n(2) X Burger R$ 40,00\n  + Queijo (R$ 2,00)\n  + Sem cebola\n'+sep;
+  const customer='Cliente\nNome: Nome privado\nSobrenome privado\nTelefone: 11999999999\nEntrega: Rua privada\nComplemento privado\n'+(type==='MESA'?'Mesa: 12\n':type==='RETIRADA'?'Entrega: Retirada no local\n':type==='BALCAO'?'Tipo: Pedido balcao\n':'')+sep;
+  return Buffer.from('\x1b@*** ADICIONAL ***\n'+type+'\nLoja\nPedido 123\nEntrega prevista: 18:00 - 18:30\n'+sep+(opa?items+customer:customer+items)+
+    'Pagamento\nDividida entre 2 pessoas\nPessoa 1 - PIX R$ 20,00\nPessoa 2 - DINHEIRO R$ 20,00\n* PAGO ONLINE *\n'+sep+
+    'Subtotal: R$ 40,00\nTaxa de entrega: Gratis\nDesconto: - R$ 1,00\nServico (10%): R$ 4,00\nTotal: R$ 43,00\nTroco para: R$ 50,00\nTroco: R$ 7,00\n'+sep+
+    '* Separar molhos\nCuidado com alergia *\n'+sep+'Powered By: MyDelivery\n\n\x1dV\x01','ascii');
+}
+test('all service modes and both section orders retain preparation notes, ETA, table and paper cut', () => {
+  for (const type of ['DELIVERY','RETIRADA','BALCAO','MESA']) for (const opa of [false,true]) {
+    const original=kitchenOrder({type,opa}), result=kitchenReceipt(original).toString('ascii');
+    for (const value of [type,'*** ADICIONAL ***','Pedido 123','Entrega prevista: 18:00 - 18:30','(2) X Burger','Queijo','Sem cebola','Separar molhos','Cuidado com alergia','\x1dV\x01']) assert.ok(result.includes(value),value);
+    for (const value of ['privado','privada','11999999999','Pagamento','Pessoa 1','Pessoa 2','PAGO ONLINE','R$','Total:','Subtotal:','Taxa de entrega:','Servico (10%):','Troco','Desconto:']) assert.ok(!result.includes(value),value);
+    if(type==='MESA') assert.ok(result.includes('Mesa: 12'));
+    if(type==='RETIRADA') assert.ok(result.includes('Retirada no local'));
+  }
+});
+test('kitchen never interprets raster bytes as customer or payment section headings', () => {
+  const pixels=Buffer.from('\nCliente\nPagamento\n');
+  const raster=Buffer.concat([Buffer.from([29,118,48,0,1,0,pixels.length,0]),pixels]);
+  assert.deepEqual(kitchenReceipt(raster),raster);
+});
+for(const mode of ['driver','raw']) test('only the kitchen copy is filtered with '+mode, async t => {
+  const f=setup(t); f.setPrinters([{name:'Caixa'},{name:'Cozinha 2'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode,kitchen:{printerName:'Cozinha 2',width:58,mode}});
+  const original=kitchenOrder();
+  await f.service.print(original);
+  const content=mode==='raw'?f.raw.map(job=>job[0].toString('ascii')):f.windows.map(w=>w.html);
+  assert.equal(content.length,2);
+  assert.ok(content[0].includes('Nome privado')); assert.ok(content[0].includes('PIX'));
+  assert.ok(!content[1].includes('Nome privado')); assert.ok(!content[1].includes('PIX'));
+  assert.ok(content.every(text=>text.includes('X Burger') && text.includes('Cuidado com alergia')));
+  await f.service.print(original,'Cozinha 2');
+  const direct=mode==='raw'?f.raw.at(-1)[0].toString('ascii'):f.windows.at(-1).html;
+  assert.ok(!direct.includes('Nome privado')); assert.ok(direct.includes('X Burger'));
+});
+test('a shared cashier/kitchen printer retains its single complete cashier copy', async t => {
+  const f=setup(t); f.setPrinters([{name:'Caixa'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:{printerName:'Caixa',width:58,mode:'raw'}});
+  await f.service.print(kitchenOrder());
+  assert.equal(f.raw.length,1); assert.ok(f.raw[0][0].includes(Buffer.from('Nome privado')));
+});
+
 test('cashier and kitchen each receive one copy with independent paper settings', async t => {
   const f = setup(t);
   await f.service.save({printerName:'EPSON TM-T20',width:80,mode:'driver',kitchen:{printerName:'OneNote (Desktop)',width:58,mode:'driver'}});
@@ -180,14 +238,16 @@ test('layout never interprets line breaks or fake item text inside raster pixels
   const raster=Buffer.concat([Buffer.from([29,118,48,0,1,0,pixels.length,0]),pixels]);
   assert.deepEqual(layoutReceipt(raster,58),raster);
 });
-test('cashier 80 mm and kitchen 58 mm format independently without losing amounts', async t => {
+test('cashier 80 mm retains amounts and kitchen 58 mm retains only preparation items', async t => {
   const f=setup(t); f.setPrinters([{name:'Caixa'},{name:'Cozinha'}]);
   await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:{printerName:'Cozinha',width:58,mode:'raw'}});
   await f.service.print(manaReceipt);
   assert.equal(f.raw.length,2);
-  for(const [bytes] of f.raw) assert.match(visibleRows(bytes)[0],/Pizza Tradicional Pequena\s+R\$ 30,00/);
+  assert.match(visibleRows(f.raw[0][0])[0],/Pizza Tradicional Pequena\s+R\$ 30,00/);
+  assert.equal(visibleRows(f.raw[1][0])[0],'(1) Pizza Tradicional Pequena');
+  assert.doesNotMatch(f.raw[1][0].toString('ascii'),/R\$/);
   assert.equal(visibleRows(f.raw[0][0])[0].length,38);
-  assert.equal(visibleRows(f.raw[1][0])[0].length,38);
+  assert.ok(visibleRows(f.raw[1][0]).every(row=>row.length<=40));
 });
 
 test('addresses use legible 80 mm and compact 58 mm sizes without enlarging pickup labels', () => {

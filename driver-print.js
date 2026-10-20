@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
-const { receiptDocument, thermalReceipt } = require('./receipt-document');
+const { receiptDocument, thermalReceipt, kitchenReceipt } = require('./receipt-document');
 
 const isVirtual = name => /onenote|print to pdf|xps|fax/i.test(name || '');
 function selectPrinter(printers, name) {
@@ -46,6 +46,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     return settings();
   }
   async function sendOne(bytes, config, printer) {
+    if (config.label === 'Cozinha') bytes = kitchenReceipt(bytes);
     // Preserve pre-1.0.19 thermal transport unless the owner explicitly chose a driver.
     if ((config.mode === 'raw' || config.mode === 'auto') && !isVirtual(printer.name)) {
       await rawPrint(thermalReceipt(bytes, config.width), printer.name);
@@ -83,7 +84,8 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   }
   async function send(bytes, explicitName) {
     const config = settings(), printers = await list();
-    const targets = [{ ...config, printerName: explicitName || config.printerName, label: 'Caixa' }];
+    const explicitKitchen = explicitName && config.kitchen && explicitName === config.kitchen.printerName && explicitName !== config.printerName;
+    const targets = [{ ...(explicitKitchen ? config.kitchen : config), printerName: explicitName || config.printerName, label: explicitKitchen ? 'Cozinha' : 'Caixa' }];
     if (!explicitName && config.kitchen) targets.push({ ...config.kitchen, label: 'Cozinha' });
     // Resolve all destinations before sending any copy. Never substitute a
     // missing configured printer with the system default.

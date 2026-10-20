@@ -40,6 +40,13 @@ impressoras de rede. Selecionar a mesma impressora nos dois campos envia uma
 pendentes na próxima tentativa do mesmo cupom (registro local por até sete dias).
 Desative a segunda seleção para voltar a imprimir só no caixa.
 
+A partir da versão 1.0.31, a via da cozinha mantém cabeçalho, número e tipo do
+pedido, mesa, previsão de entrega, quantidades, produtos, complementos e
+observações. Dados do cliente, valores dos itens e informações de pagamento
+são removidos apenas dessa via, tanto no driver quanto no modo térmico direto.
+A via do caixa continua completa. Quando os dois destinos usam a mesma
+impressora, a única cópia continua sendo a completa do caixa.
+
 O modo térmico direto ESC/POS continua disponível para impressoras
 compatíveis. Se a impressora escolhida for removida, o app informa o problema
 em vez de enviar para outro destino. Os envios são sequenciais.

@@ -2,7 +2,7 @@
 // connecting to a restaurant or changing the user's printer preferences.
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), assert = require('node:assert/strict');
-const { receiptDocument } = require('../receipt-document');
+const { receiptDocument, kitchenReceipt } = require('../receipt-document');
 const output = process.env.MD_PRINT_TEST_OUTPUT || fs.mkdtempSync(path.join(os.tmpdir(), 'md-print-render-'));
 fs.mkdirSync(output, { recursive: true });
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'md-print-profile-')));
@@ -99,6 +99,14 @@ app.whenReady().then(async () => {
     assert.deepEqual(prices.map(p=>p.text),['R$ 37,00','(R$ 18,50)','(R$ 18,50)','R$ 37,00','R$ 10,00','R$ 47,00']);
     assert.ok(prices.every(p=>p.gutter >= (width === 58 ? 3 : 6)*96/25.4-1 && p.scroll<=p.width+1),JSON.stringify(prices));
     fs.writeFileSync(path.join(output,`talentos-prices-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
+  }
+  for (const width of [58,80]) {
+    await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(kitchenReceipt(complete),width)));
+    const kitchen = await receipt.webContents.executeJavaScript('({text:document.body.innerText,width:document.body.clientWidth,scroll:document.body.scrollWidth})');
+    for (const text of ['PARA ENTREGA','Pedido 12345','Pizza Tradicional Pequena','Frango com Catupiry','Refrigerante 1 L','Coca-Cola Original']) assert.ok(kitchen.text.includes(text),text);
+    for (const text of ['Cliente Teste','Telefone:','Entrega:','Pagamento','DINHEIRO','R$','Total:','Subtotal:']) assert.ok(!kitchen.text.includes(text),text);
+    assert.ok(kitchen.scroll <= kitchen.width + 1);
+    fs.writeFileSync(path.join(output,`kitchen-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);

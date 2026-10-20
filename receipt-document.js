@@ -29,6 +29,45 @@ function receiptLines(input) {
 function isAddress(text) {
   return /^(?:Entrega|End|Endereco):\s*\S/i.test(text) && !/^(?:Entrega|End|Endereco):\s*(?:Retirada no local|-+)\s*$/i.test(text);
 }
+// The kitchen receives preparation information only. Filter the original
+// section boundaries before either driver rendering or thermal line wrapping,
+// so multiline customer/payment values cannot leak into the kitchen copy.
+// Item notes are deliberately not searched for words such as "Cliente".
+function kitchenReceipt(input) {
+  const out = [];
+  let section = '';
+  for (const line of receiptLines(input)) {
+    const text = line.text;
+    if (!line.image && text === 'Cliente') { section = 'customer'; continue; }
+    if (!line.image && text === 'Pagamento') { section = 'payment'; continue; }
+    if (!line.image && (text === 'Itens' || /^\(\d+(?:[.,]\d+)?\)\s/.test(text))) section = 'items';
+    if (section === 'customer') {
+      if (/^[-=]{8,}$/.test(text)) { section = ''; continue; }
+      // Table and service mode belong to the order, not to the customer.
+      if (/^Mesa:|^Tipo: Pedido balcao$|^Entrega: Retirada no local$/i.test(text)) out.push(line.raw);
+      continue;
+    }
+    if (section === 'payment') {
+      if (/^[-=]{8,}$/.test(text)) { section = 'summary'; continue; }
+      // Legacy receipts may omit separators before notes/fiscal/footer.
+      if (/^(?:\* .* \*|Observacoes|DANFE NFC-e|Powered By:)/.test(text) && !/^\* (?:PAGO ONLINE|Cobrar do cliente) \*$/.test(text)) section = '';
+      else continue;
+    }
+    if (section === 'summary') {
+      if (/^[-=]{8,}$/.test(text)) { section = ''; continue; }
+      if (/^(?:Subtotal|Desconto|Taxa de entrega|Servico \(10%\)|Total|Troco(?: para)?):|^\s*-?\s*R\$\s*[\d.,]+\s*$/.test(text)) continue;
+      section = '';
+    }
+    if (section === 'items' && !line.image) {
+      if (/^[-=]{8,}$/.test(text)) section = '';
+      // Old receipts put long-item amounts on their own next line.
+      if (/^\s*-?\s*R\$\s*-?[\d.,]+\s*$/.test(text)) continue;
+      const raw = line.raw.toString('ascii').replace(/[ \t]+(?:\(R\$[ \t]*-?[\d.,]+\)|R\$[ \t]*-?[\d.,]+)(?=(?:\x1b[!aEt][\s\S])*\r?\n?$)/, '');
+      out.push(Buffer.from(raw,'ascii'));
+    } else out.push(line.raw);
+  }
+  return Buffer.concat(out);
+}
 function isHeading(text) {
   return /^(?:Cliente|Itens|Pagamento|Observacoes|PARA ENTREGA|DELIVERY|RETIRADA NO LOCAL|PEDIDO BALCAO|Pedido\s+#?\d+)$/i.test(text.trim());
 }
@@ -243,4 +282,4 @@ function thermalReceipt(input, width = 80) {
   return Buffer.from(out);
 }
 
-module.exports = { receiptDocument, thermalReceipt, layoutReceipt };
+module.exports = { receiptDocument, thermalReceipt, layoutReceipt, kitchenReceipt };
