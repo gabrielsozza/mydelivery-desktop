@@ -71,7 +71,7 @@ function kitchenReceipt(input) {
 function isHeading(text) {
   return /^(?:Cliente|Itens|Pagamento|Observacoes|PARA ENTREGA|DELIVERY|RETIRADA NO LOCAL|PEDIDO BALCAO|Pedido\s+#?\d+)$/i.test(text.trim());
 }
-function layoutReceipt(input, width = 80) {
+function layoutReceipt(input, width = 80, forDriver = false) {
   const lines = receiptLines(input);
   const columns = width === 58 ? 30 : 44, compactColumns = width === 58 ? 40 : 58;
   // Leave a dedicated right gutter for amounts: some thermal drivers clip
@@ -107,6 +107,18 @@ function layoutReceipt(input, width = 80) {
           out.push(row(name.slice(0,cut),compact,true)); name = name.slice(cut).trimStart();
         }
         out.push(row(name + ' '.repeat(Math.max(1,limit - name.length - amount.length)) + amount,compact,true));
+        continue;
+      }
+      if (!forDriver && text.length > columns) {
+        let start = 0;
+        while (line.raw[start] === 27) start += line.raw[start + 1] === 64 ? 2 : 3;
+        out.push(line.raw.subarray(0,start));
+        while (text.length > columns) {
+          let cut = text.lastIndexOf(' ', columns);
+          if (cut < 1) cut = columns;
+          out.push(row(text.slice(0,cut),false,true)); text = text.slice(cut).trimStart();
+        }
+        out.push(row(text,false,true));
         continue;
       }
     }
@@ -145,12 +157,13 @@ function layoutReceipt(input, width = 80) {
 // Converts the ESC/POS subset emitted by MyDelivery into an inert document for
 // the OS driver. Keep the same receipt content, including fiscal raster QR codes.
 function receiptDocument(input, width = 80) {
-  const bytes = layoutReceipt(input, width);
+  const bytes = layoutReceipt(input, width, true);
   if (!bytes.length || bytes.length > 2 * 1024 * 1024) throw new Error('Cupom vazio ou grande demais.');
   width = width === 58 ? 58 : 80;
   const printableWidth = width === 58 ? 48 : 72;
   const sidePadding = width === 58 ? 1.5 : 2;
   const baseFont = width === 80 ? 14 : 12.5;
+  let preparation = false;
   let align = 'left', bold = false, size = 0, line = '', text = '', output = '', units = 0;
   const escape = value => value.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   function flushText() {
@@ -163,6 +176,9 @@ function receiptDocument(input, width = 80) {
     flushText();
     // Separators should fill the paper, not wrap into two lines on 58 mm rolls.
     const plain = line.replace(/<[^>]*>/g, '');
+    if (/^[-=]{8,}$/.test(plain) || /^(?:Cliente|Pagamento|Observacoes|Powered By:)/.test(plain)) preparation = false;
+    if (plain === 'Itens' || /^\(\d+(?:[.,]\d+)?\)\s/.test(plain)) preparation = true;
+    const preparationRow = preparation && plain !== 'Itens';
     const item = plain.match(/^(\(\d+(?:[.,]\d+)?\)\s.*?)\s+(R\$\s*[\d.,]+)\s*$/)
       || plain.match(/^(.*?)\s{2,}(R\$\s*-?[\d.,]+)\s*$/)
       || plain.match(/^(.*?)\s+(\(R\$\s*-?[\d.,]+\))\s*$/);
@@ -177,13 +193,14 @@ function receiptDocument(input, width = 80) {
     const customer = /^(?:Nome|Telefone|Fone|Obs|Observacao|Referencia|Forma de Pagamento):/i.test(plain);
     const heading = width === 80 && isHeading(plain);
     // Addresses may flow onto another line; never shrink a long street to tiny text.
-    const scale = address || customer || heading || item ? 1 : Math.min(1, usablePx / Math.max(1, units * (width === 80 ? baseFont * 0.61 : 7.6)));
+    const scale = preparationRow || address || customer || heading || item ? 1 : Math.min(1, usablePx / Math.max(1, units * (width === 80 ? baseFont * 0.61 : 7.6)));
     if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + baseFont + 'px');
     if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:20px').replace(/font-weight:\d+/g,'font-weight:900');
+    if (preparationRow) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (width === 58 ? 17 : 19) + 'px');
     if (scale < 1) line = line.replace(/font-size:([\d.]+)px/g, (_, px) => 'font-size:' + (Number(px) * scale).toFixed(3) + 'px');
     output += /^[-=]{8,}$/.test(plain)
       ? `<div class="separator" style="border-top-style:${plain[0] === '=' ? 'double' : 'dashed'}"></div>`
-      : `<div class="line${address ? ' address' : customer ? ' customer' : heading ? ' heading' : ''}${item ? ' amount-row' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
+      : `<div class="line${address ? ' address' : customer ? ' customer' : heading ? ' heading' : ''}${item ? ' amount-row' : ''}${preparationRow ? ' preparation' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
     line = ''; units = 0;
   }
   function need(i, n) { if (i + n > bytes.length) throw new Error('Cupom incompleto. Tente imprimir novamente.'); }
@@ -226,7 +243,7 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body data-paper-width="${width}">${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.preparation{white-space:normal;overflow-wrap:anywhere;line-height:1.35;padding:2px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body data-paper-width="${width}">${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use

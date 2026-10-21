@@ -303,3 +303,20 @@ test('Talentos: item, flavor and total cents retain a dedicated right gutter', (
     for (const r of rows) assert.ok(r.length <= (width === 58 && r.includes('Frango') ? 38 : width === 58 ? 28 : 38), r);
   }
 });
+
+test('JR photo: long preparation items wrap in readable type instead of shrinking',()=>{
+  const name='(1) Smash Salada + R$ 18,99 Leve Outro Item';
+  const bytes=Buffer.from('Itens\n'+name+'\n  + Sem cebola, com molho separado\n-------------------------------\nPagamento\n');
+  for(const width of [58,80]){
+    const html=receiptDocument(bytes,width),font=width===58?17:19;
+    const rows=[...html.matchAll(/<div class="line[^\"]* preparation"[^>]*>(.*?)<\/div>/g)].map(m=>m[1]);
+    assert.ok(rows.length>=2);
+    assert.ok(html.includes(name),'currency inside a product name remains part of its name');
+    assert.doesNotMatch(html,/class="line amount-row preparation"/);
+    for(const row of rows) for(const size of row.matchAll(/font-size:([\d.]+)px/g)) assert.equal(Number(size[1]),font);
+    assert.match(html,/\.preparation\{white-space:normal;overflow-wrap:anywhere/);
+    const raw=thermalReceipt(Buffer.from(name+'\n'),width);
+    const lines=visibleRows(raw);assert.equal(lines.join(' '),name);assert.ok(lines.every(r=>r.length<=(width===58?30:44)));
+    assert.ok(!raw.includes(Buffer.from([27,33,9])),'kitchen name must use normal native font');
+  }
+});

@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
     const rows = await receipt.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.line')).map(el=>({text:el.textContent,width:el.clientWidth,scroll:el.scrollWidth,whiteSpace:getComputedStyle(el).whiteSpace}))`);
     assert.equal(rows.length,4);
     assert.match(rows[0].text,/Pizza Tradicional Pequena\s+R\$ 30,00/);
-    assert.ok(rows.every(r=>r.scroll<=r.width+1 && r.whiteSpace==='pre'), 'Names and amounts fit on the same line without clipping: ' + JSON.stringify({width,rows}));
+    assert.ok(rows.every(r=>r.scroll<=r.width+1), 'Names and amounts fit on the same line without clipping: ' + JSON.stringify({width,rows}));
     fs.writeFileSync(path.join(output,`mana-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   const addressText = 'Entrega: Avenida Governador Carlos Lindenberg, 1234, Bloco B, Parque Vitoria, Sao Luis - MA, CEP 65000-000';
@@ -106,6 +106,8 @@ app.whenReady().then(async () => {
     for (const text of ['PARA ENTREGA','Pedido 12345','Pizza Tradicional Pequena','Frango com Catupiry','Refrigerante 1 L','Coca-Cola Original']) assert.ok(kitchen.text.includes(text),text);
     for (const text of ['Cliente Teste','Telefone:','Entrega:','Pagamento','DINHEIRO','R$','Total:','Subtotal:']) assert.ok(!kitchen.text.includes(text),text);
     assert.ok(kitchen.scroll <= kitchen.width + 1);
+    const itemFonts = await receipt.webContents.executeJavaScript('[...document.querySelectorAll(".preparation span")].map(el=>getComputedStyle(el).fontSize)');
+    assert.ok(itemFonts.length > 0 && itemFonts.every(size=>size === (width === 58 ? "17px" : "19px")));
     fs.writeFileSync(path.join(output,`kitchen-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   receipt.destroy(); clearTimeout(watchdog);
