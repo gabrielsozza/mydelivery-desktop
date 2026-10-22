@@ -196,7 +196,9 @@ ipcMain.handle('md:imprimir', async (event, payload) => {
     const printerName = (payload && payload.printerName) || null;
     if (!bytes.length || bytes.length > 2 * 1024 * 1024 || bytes.some(b => !Number.isInteger(b) || b < 0 || b > 255)) throw new Error('Cupom inválido.');
     if (printerName !== null && typeof printerName !== 'string') throw new Error('Impressora inválida.');
-    return await printing.print(bytes, printerName);
+    const restaurantSlug = payload && payload.restaurantSlug;
+    if (restaurantSlug != null && (typeof restaurantSlug !== 'string' || restaurantSlug.length > 200)) throw new Error('Loja inválida.');
+    return await printing.print(bytes, printerName, { restaurantSlug });
   } catch (e) {
     return { ok: false, motivo: e && e.message ? e.message : String(e) };
   }

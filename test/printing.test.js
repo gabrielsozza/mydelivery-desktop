@@ -320,3 +320,19 @@ test('JR photo: long preparation items wrap in readable type instead of shrinkin
     assert.ok(!raw.includes(Buffer.from([27,33,9])),'kitchen name must use normal native font');
   }
 });
+
+for(const mode of ['driver','raw']) test('only Talentos pizzas receives a complete kitchen copy with '+mode,async t=>{
+  const f=setup(t);f.setPrinters([{name:'Caixa'},{name:'Cozinha'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode,kitchen:{printerName:'Cozinha',width:80,mode}});
+  const receipt=kitchenOrder();
+  await f.service.print(receipt,null,{restaurantSlug:'talentos-pizzas'});
+  if(mode==='raw')assert.deepEqual(f.raw[0][0],f.raw[1][0]);else assert.equal(f.windows[0].html,f.windows[1].html);
+  for(const slug of [undefined,'outra-loja','talentos-pizzas-2']){
+    await f.service.print(receipt,'Cozinha',{restaurantSlug:slug});
+    const copy=mode==='raw'?f.raw.at(-1)[0].toString('ascii'):f.windows.at(-1).html;
+    assert.doesNotMatch(copy,/Nome:|Forma de Pagamento:|Subtotal:/);
+  }
+  await f.service.print(receipt,'Cozinha',{restaurantSlug:'talentos-pizzas'});
+  const complete=mode==='raw'?f.raw.at(-1)[0].toString('ascii'):f.windows.at(-1).html;
+  assert.match(complete,/Nome:/);assert.match(complete,/Subtotal:/);
+});

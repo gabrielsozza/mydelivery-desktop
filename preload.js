@@ -21,12 +21,12 @@ try {
 contextBridge.exposeInMainWorld('myDeliveryDesktop', {
   isDesktop: true,
   platform: process.platform, // 'win32' | 'darwin'
-  versao: '1.0.31',
+  versao: '1.0.33',
 
   // Recebe os bytes ESC/POS (array de números) já montados pelo cupom e manda
   // pra impressora padrão (ou a escolhida). Retorna { ok, motivo }.
-  imprimir: (bytes, printerName) =>
-    ipcRenderer.invoke('md:imprimir', { bytes: Array.from(bytes || []), printerName: printerName || null }),
+  imprimir: (bytes, printerName, context) =>
+    ipcRenderer.invoke('md:imprimir', { bytes: Array.from(bytes || []), printerName: printerName || null, restaurantSlug: context && context.restaurantSlug }),
 
   listarImpressoras: () => ipcRenderer.invoke('md:listar-impressoras'),
   configurarImpressora: (action, value) => ipcRenderer.invoke('md:config-impressora', action, value),
