@@ -33,6 +33,9 @@ jobs:
         run: npm run dist:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate installed Windows package before publishing the release
+        shell: pwsh
+        run: ./test/windows-installed-smoke.ps1 -Installer dist/MyDelivery-Setup.exe -TestRepair
 
   mac:
     needs: windows   # o rascunho do release já existe → sem corrida de criação
