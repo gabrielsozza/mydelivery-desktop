@@ -4,7 +4,15 @@ $Installer = (Resolve-Path $Installer).Path
 $installDir = Join-Path $env:LOCALAPPDATA 'MyDelivery-installed-smoke'
 $exe = Join-Path $installDir 'MyDelivery.exe'
 function Stop-TestApp {
-  Get-CimInstance Win32_Process -Filter "Name = 'MyDelivery.exe'" | Where-Object { $_.ExecutablePath -eq $exe } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  # This script runs only on a disposable CI runner; wait for Chromium children
+  # to release loaded DLLs before testing reinstallation.
+  if ($env:CI -ne 'true') { throw 'Run this installed-app smoke test only on an isolated CI runner' }
+  for ($i=0;$i -lt 20;$i++) {
+    if (!(Get-Process -Name MyDelivery -ErrorAction SilentlyContinue)) { return }
+    & taskkill.exe /F /T /IM MyDelivery.exe 2>$null | Out-Null
+    Start-Sleep -Milliseconds 500
+  }
+  throw 'Test application processes did not stop'
 }
 function Install-App {
   Stop-TestApp
@@ -12,6 +20,7 @@ function Install-App {
   $p = Start-Process -FilePath $Installer -ArgumentList "/S /D=$installDir" -PassThru -Wait
   if ($p.ExitCode -ne 0) { throw "Installer failed: $($p.ExitCode)" }
   if (!(Test-Path $exe)) { throw 'Installer did not create MyDelivery.exe' }
+  Stop-TestApp
 }
 function Assert-PE([string]$file) {
   $bytes = [IO.File]::ReadAllBytes($file)
