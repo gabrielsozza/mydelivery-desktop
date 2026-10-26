@@ -96,6 +96,8 @@ function layoutReceipt(input, width = 80, forDriver = false) {
           j += length;
         }
         let name = match[1].trim(), amount = match[2];
+        // Pixel layout belongs to the driver, not native character columns.
+        if (forDriver) { out.push(row(name + '  ' + amount, false, true)); continue; }
         const compact = name.length + amount.length + 1 > moneyColumns;
         const limit = compact ? compactMoneyColumns : moneyColumns;
         // Exceptionally long names retain all information; the amount stays
@@ -122,9 +124,10 @@ function layoutReceipt(input, width = 80, forDriver = false) {
         continue;
       }
     }
-    const modifier = line.text.match(/^(\s*\+.*?)\s+(\(R\$\s*-?[\d.,]+\))\s*$/);
+    const modifier = line.text.match(/^(\s*(?:\+|\d+\/\d+)\s.*?)\s+(\(R\$\s*-?[\d.,]+\))\s*$/);
     if (modifier) {
       let name = modifier[1].trimEnd();
+      if (forDriver) { out.push(row(name + '  ' + modifier[2], false, false)); continue; }
       const amount = modifier[2], compact = name.length + amount.length + 1 > moneyColumns;
       const limit = compact ? compactMoneyColumns : moneyColumns;
       const available = Math.max(1, limit - amount.length - 1);
@@ -136,7 +139,7 @@ function layoutReceipt(input, width = 80, forDriver = false) {
       out.push(row(name + ' '.repeat(Math.max(1,limit-name.length-amount.length)) + amount,compact,false));
       continue;
     }
-    if (/^\s+\+ /.test(line.text) && line.text.length > columns && line.text.length <= compactColumns) {
+    if (/^\s+(?:\+|\d+\/\d+) /.test(line.text) && line.text.length > columns && line.text.length <= compactColumns) {
       out.push(row(line.text,true,false)); continue;
     }
     const total = line.text.match(/^((?:Subtotal|Total|Taxa de entrega|Desconto|Troco(?: para)?):)\s+(R\$\s*-?[\d.,]+)\s*$/i);
@@ -196,11 +199,21 @@ function receiptDocument(input, width = 80) {
     const scale = preparationRow || address || customer || heading || item ? 1 : Math.min(1, usablePx / Math.max(1, units * (width === 80 ? baseFont * 0.61 : 7.6)));
     if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + baseFont + 'px');
     if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:20px').replace(/font-weight:\d+/g,'font-weight:900');
-    if (preparationRow) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (width === 58 ? 17 : 19) + 'px');
+    if (preparationRow) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (width === 58 ? 12.5 : 15.5) + 'px');
+    // Keep short names and amounts on one line. If that would require tiny
+    // type, let the name use the full row and put the intact amount below it.
+    let stacked = false;
+    if (item) {
+      const available = usablePx - (width === 58 ? 1 : 2) * 96 / 25.4 - 4;
+      const desired = preparationRow ? (width === 58 ? 12.5 : 15.5) : baseFont;
+      const fit = Math.min(desired, available / (units * 0.61));
+      stacked = fit < (width === 58 ? 11.5 : 13.5);
+      line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (stacked ? desired : fit).toFixed(2) + 'px');
+    }
     if (scale < 1) line = line.replace(/font-size:([\d.]+)px/g, (_, px) => 'font-size:' + (Number(px) * scale).toFixed(3) + 'px');
     output += /^[-=]{8,}$/.test(plain)
       ? `<div class="separator" style="border-top-style:${plain[0] === '=' ? 'double' : 'dashed'}"></div>`
-      : `<div class="line${address ? ' address' : customer ? ' customer' : heading ? ' heading' : ''}${item ? ' amount-row' : ''}${preparationRow ? ' preparation' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
+      : `<div class="line${address ? ' address' : customer ? ' customer' : heading ? ' heading' : ''}${item ? ' amount-row' + (stacked ? ' stacked' : '') : ''}${preparationRow ? ' preparation' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
     line = ''; units = 0;
   }
   function need(i, n) { if (i + n > bytes.length) throw new Error('Cupom incompleto. Tente imprimir novamente.'); }
@@ -243,7 +256,7 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{min-width:0;white-space:normal;overflow-wrap:anywhere}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.preparation{white-space:normal;overflow-wrap:anywhere;line-height:1.35;padding:2px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body data-paper-width="${width}">${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:'Courier New',monospace;font-size:${baseFont}px;font-weight:700}.line{white-space:pre;min-height:1.25em}.heading{font-family:Arial,sans-serif}.heading{line-height:1.3;padding:3px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 1 : 2}mm)}.amount-row>span:first-child{flex:1;min-width:0;white-space:normal;overflow-wrap:break-word}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.amount-row.stacked{flex-direction:column;gap:0}.amount-row.stacked>span:last-child{align-self:flex-end}.preparation{white-space:normal;overflow-wrap:break-word;line-height:1.3;padding:1px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:2px solid black;margin:5px 0}svg{break-inside:avoid}</style></head><body data-paper-width="${width}">${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use

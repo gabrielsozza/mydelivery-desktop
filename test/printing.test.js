@@ -308,13 +308,13 @@ test('JR photo: long preparation items wrap in readable type instead of shrinkin
   const name='(1) Smash Salada + R$ 18,99 Leve Outro Item';
   const bytes=Buffer.from('Itens\n'+name+'\n  + Sem cebola, com molho separado\n-------------------------------\nPagamento\n');
   for(const width of [58,80]){
-    const html=receiptDocument(bytes,width),font=width===58?17:19;
+    const html=receiptDocument(bytes,width),font=width===58?12.5:15.5;
     const rows=[...html.matchAll(/<div class="line[^\"]* preparation"[^>]*>(.*?)<\/div>/g)].map(m=>m[1]);
     assert.ok(rows.length>=2);
     assert.ok(html.includes(name),'currency inside a product name remains part of its name');
     assert.doesNotMatch(html,/class="line amount-row preparation"/);
     for(const row of rows) for(const size of row.matchAll(/font-size:([\d.]+)px/g)) assert.equal(Number(size[1]),font);
-    assert.match(html,/\.preparation\{white-space:normal;overflow-wrap:anywhere/);
+    assert.match(html,/\.preparation\{white-space:normal;overflow-wrap:break-word/);
     const raw=thermalReceipt(Buffer.from(name+'\n'),width);
     const lines=visibleRows(raw);assert.equal(lines.join(' '),name);assert.ok(lines.every(r=>r.length<=(width===58?30:44)));
     assert.ok(!raw.includes(Buffer.from([27,33,9])),'kitchen name must use normal native font');
@@ -336,3 +336,8 @@ for(const mode of ['driver','raw']) test('only Talentos pizzas receives a comple
   const complete=mode==='raw'?f.raw.at(-1)[0].toString('ascii'):f.windows.at(-1).html;
   assert.match(complete,/Nome:/);assert.match(complete,/Subtotal:/);
 });
+
+ test('driver keeps item names together instead of applying native column wrapping',()=>{
+ const bytes=Buffer.from('Itens\n(1) Pizza Media\n                       R$ 37,00\n  1/2 Calabresa\n  1/2 Portuguesa\n(1) Refrigerante 1 L     R$ 12,00\n  + Coca-Cola (R$ 12,00)\n-------------------------------\n');
+ for(const width of [58,80]) { const html=receiptDocument(bytes,width); assert.match(html,/>\(1\) Pizza Media<\/span>/); assert.match(html,/>\(1\) Refrigerante 1 L<\/span>/); assert.match(html,/1\/2 Calabresa/); assert.match(html,/1\/2 Portuguesa/); assert.match(html,/R\$ 37,00/); assert.match(html,/R\$ 12,00/); }
+ });
