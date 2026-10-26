@@ -3,7 +3,18 @@ const api = window.myDeliveryDesktop;
 const printer = document.querySelector('#printer'), width = document.querySelector('#width'), mode = document.querySelector('#mode');
 const status = document.querySelector('#status'), note = document.querySelector('#virtual-note');
 const kitchen = document.querySelector('#kitchen'), kitchenWidth = document.querySelector('#kitchen-width'), kitchenMode = document.querySelector('#kitchen-mode');
-let printers = [];
+let printers = [];let extras=[];
+function renderExtras(){
+ const root=document.querySelector('#extra-printers');root.replaceChildren();
+ extras.forEach((extra,index)=>{
+  const card=document.createElement('section');card.className='section extra-printer';
+  const head=document.createElement('div');head.className='extra-head';const title=document.createElement('h2');title.textContent='Impressora '+(index+3);head.append(title);const remove=document.createElement('button');remove.type='button';remove.textContent='Remover';remove.onclick=()=>{extras.splice(index,1);renderExtras();};head.append(remove);card.append(head);
+  function select(label,key,options){const l=document.createElement('label');l.textContent=label;const field=document.createElement('select');for(const [v,text] of options){const o=document.createElement('option');o.value=v;o.textContent=text;field.append(o);}field.value=extra[key];field.onchange=()=>{extra[key]=key==='width'?Number(field.value):field.value;};l.append(field);card.append(l);}
+  const available=printers.map(p=>[p.name,p.displayName||p.name]);if(extra.printerName&&!printers.some(p=>p.name===extra.printerName))available.push([extra.printerName,extra.printerName+' (não encontrada)']);
+  select('Impressora','printerName',[['','Selecione uma impressora'],...available]);select('Conteúdo do cupom','receipt',[['kitchen','Itens e observações para preparo'],['full','Cupom completo']]);select('Papel','width',[[80,'80 mm'],[58,'58 mm']]);select('Como imprimir','mode',[['auto','Automático'],['driver','Pelo driver do sistema'],['raw','Térmica direta — ESC/POS']]);root.append(card);
+ });document.querySelector('#add-printer').hidden=extras.length>=2;
+}
+document.querySelector('#add-printer').onclick=()=>{if(extras.length>=2)return;extras.push({printerName:'',width:80,mode:'auto',receipt:'kitchen'});renderExtras();};
 let automaticPrinter = '';
 function message(text, error = false) { status.textContent = text; status.className = error ? 'error' : 'success'; }
 function busy(value) { document.querySelectorAll('button').forEach(button => { button.disabled = value; }); }
@@ -46,6 +57,7 @@ async function load() {
     }
     kitchen.value = savedKitchen ? savedKitchen.printerName : '';
     kitchenWidth.value = String(savedKitchen ? savedKitchen.width : 80); kitchenMode.value = savedKitchen ? savedKitchen.mode : 'auto';
+    extras=(result.settings.extras||[]).map(x=>({...x}));renderExtras();
     printer.disabled = false; explain();
     message(printers.length ? '' : 'Nenhuma impressora encontrada. Instale o driver e clique em Atualizar lista.', !printers.length);
   } catch (error) { message(error.message, true); }
@@ -54,7 +66,7 @@ async function load() {
 async function save(test) {
   busy(true); message(test ? 'Enviando teste…' : 'Salvando…');
   try {
-    const saved = await api.configurarImpressora('save', { printerName: printer.value, width: Number(width.value), mode: mode.value, kitchen: kitchen.value ? { printerName: kitchen.value, width: Number(kitchenWidth.value), mode: kitchenMode.value } : null });
+    const saved = await api.configurarImpressora('save', { printerName: printer.value, width: Number(width.value), mode: mode.value, extras, kitchen: kitchen.value ? { printerName: kitchen.value, width: Number(kitchenWidth.value), mode: kitchenMode.value } : null });
     if (!saved.ok) throw new Error(saved.motivo);
     if (test) {
       const result = await api.configurarImpressora('test');

@@ -341,3 +341,16 @@ for(const mode of ['driver','raw']) test('only Talentos pizzas receives a comple
  const bytes=Buffer.from('Itens\n(1) Pizza Media\n                       R$ 37,00\n  1/2 Calabresa\n  1/2 Portuguesa\n(1) Refrigerante 1 L     R$ 12,00\n  + Coca-Cola (R$ 12,00)\n-------------------------------\n');
  for(const width of [58,80]) { const html=receiptDocument(bytes,width); assert.match(html,/>\(1\) Pizza Media<\/span>/); assert.match(html,/>\(1\) Refrigerante 1 L<\/span>/); assert.match(html,/1\/2 Calabresa/); assert.match(html,/1\/2 Portuguesa/); assert.match(html,/R\$ 37,00/); assert.match(html,/R\$ 12,00/); }
  });
+
+test('four destinations preserve existing settings and resume only failed copies',async t=>{
+ const f=setup(t);f.setPrinters(['Caixa','Cozinha','Bar','Expedição'].map(name=>({name})));
+ const extra=(printerName,receipt)=>({printerName,width:58,mode:'raw',receipt});
+ await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:{printerName:'Cozinha',width:80,mode:'raw'},extras:[extra('Bar','kitchen'),extra('Expedição','full')]});
+ let fail=true;const sent=[];f.options.rawPrint=async(bytes,name)=>{if(name==='Bar'&&fail)throw Error('Sem conexão');sent.push(name);};
+ const service=createPrintingService(f.options);await assert.rejects(service.print(kitchenOrder()),/Sem conexão/);assert.deepEqual(sent,['Caixa','Cozinha','Expedição']);
+ fail=false;await service.print(kitchenOrder());assert.deepEqual(sent,['Caixa','Cozinha','Expedição','Bar']);assert.equal(service.settings().extras.length,2);
+ await assert.rejects(service.save({...service.settings(),extras:[extra('Bar','full'),extra('Bar','full'),extra('Bar','full')]}),/quatro/);
+});
+test('duplicate extra destination sends a single copy',async t=>{
+ const f=setup(t);f.setPrinters([{name:'Caixa'}]);await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:null,extras:[{printerName:'Caixa',width:58,mode:'raw',receipt:'kitchen'}]});await f.service.print(kitchenOrder());assert.equal(f.raw.length,1);assert.match(f.raw[0][0].toString('ascii'),/Cliente/);
+});

@@ -24,7 +24,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   function settings() {
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'printing.json'), 'utf8')); } catch (_) {}
-    return { printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
+    return { printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', extras: Array.isArray(saved.extras)?saved.extras.slice(0,2).filter(x=>x&&typeof x.printerName==='string'&&x.printerName).map(x=>({printerName:x.printerName,width:x.width===58?58:80,mode:['auto','driver','raw'].includes(x.mode)?x.mode:'auto',receipt:x.receipt==='full'?'full':'kitchen'})):[], kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
   }
   async function list() { return getContents().getPrintersAsync(); }
   async function save(value) {
@@ -39,16 +39,23 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       if (k.mode === 'raw' && isVirtual(destination.name)) throw new Error('Na cozinha, selecione o driver do sistema para impressoras virtuais.');
       kitchen = { printerName: k.printerName, width: k.width, mode: k.mode };
     }
+    const extras = value.extras === undefined ? settings().extras : value.extras;
+    if(!Array.isArray(extras)||extras.length>2)throw new Error('Configure no máximo quatro impressoras.');
+    for(const extra of extras){
+      if(!extra||typeof extra.printerName!=='string'||!extra.printerName||![58,80].includes(extra.width)||!['auto','raw','driver'].includes(extra.mode)||!['full','kitchen'].includes(extra.receipt))throw new Error('Confira as opções das impressoras adicionais.');
+      const target=selectPrinter(await list(),extra.printerName);
+      if(extra.mode==='raw'&&isVirtual(target.name))throw new Error('Escolha o driver para impressoras virtuais.');
+    }
     const file = path.join(app.getPath('userData'), 'printing.json');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file + '.tmp', JSON.stringify({ printerName: value.printerName, width: value.width, mode: value.mode, kitchen }));
+    fs.writeFileSync(file + '.tmp', JSON.stringify({ printerName: value.printerName, width: value.width, mode: value.mode, kitchen, extras }));
     fs.renameSync(file + '.tmp', file);
     return settings();
   }
   async function sendOne(bytes, config, printer, context) {
     // Talentos pizzas explicitly requested the complete cashier copy in its kitchen.
     const fullKitchen = context && context.restaurantSlug === 'talentos-pizzas';
-    if (config.label === 'Cozinha' && !fullKitchen) bytes = kitchenReceipt(bytes);
+    if ((config.label === 'Cozinha'||config.receipt==='kitchen') && !fullKitchen) bytes = kitchenReceipt(bytes);
     // Preserve pre-1.0.19 thermal transport unless the owner explicitly chose a driver.
     if ((config.mode === 'raw' || config.mode === 'auto') && !isVirtual(printer.name)) {
       await rawPrint(thermalReceipt(bytes, config.width), printer.name);
@@ -89,6 +96,8 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     const explicitKitchen = explicitName && config.kitchen && explicitName === config.kitchen.printerName && explicitName !== config.printerName;
     const targets = [{ ...(explicitKitchen ? config.kitchen : config), printerName: explicitName || config.printerName, label: explicitKitchen ? 'Cozinha' : 'Caixa' }];
     if (!explicitName && config.kitchen) targets.push({ ...config.kitchen, label: 'Cozinha' });
+    if(!explicitName)config.extras.forEach((extra,index)=>targets.push({...extra,label:'Impressora '+(index+3)}));
+    if(explicitName){const extra=config.extras.find(x=>x.printerName===explicitName);if(extra)targets[0]={...extra,label:'Impressora adicional'};}
     // Resolve all destinations before sending any copy. Never substitute a
     // missing configured printer with the system default.
     const resolved = targets.map(target => ({ ...target, printer: selectPrinter(printers, target.printerName) }));
