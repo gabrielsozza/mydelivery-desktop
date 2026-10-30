@@ -155,30 +155,20 @@ function avisarAtualizacaoMac(manual) {
   req.end();
 }
 
+let windowsUpdater = null;
 function checarAtualizacoes(manual) {
   if (process.platform === 'darwin') { avisarAtualizacaoMac(manual); return; }
-  // Windows (e Linux): electron-updater — baixa e instala sozinho.
-  try {
-    const { autoUpdater } = require('electron-updater');
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.removeAllListeners();
-    autoUpdater.on('update-downloaded', () => {
-      dialog.showMessageBox(win, {
-        type: 'info', title: 'Atualização pronta',
-        message: 'Uma nova versão do MyDelivery foi baixada.',
-        detail: 'O app vai reiniciar rapidinho pra aplicar.',
-        buttons: ['Reiniciar agora', 'Depois'], defaultId: 0, cancelId: 1
-      }).then((r) => { if (r.response === 0) autoUpdater.quitAndInstall(); });
+  if (!app.isPackaged) return;
+  if (!windowsUpdater) {
+    const { createAppUpdater, createUpdateLog } = require('./app-updater');
+    windowsUpdater = createAppUpdater({
+      updater: require('electron-updater').autoUpdater,
+      log: createUpdateLog(app.getPath('userData'), app.getVersion()),
+      showDialog: options => win && !win.isDestroyed()
+        ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)
     });
-    if (manual) {
-      autoUpdater.on('update-not-available', () => {
-        dialog.showMessageBox(win, { type: 'info', title: 'Tudo em dia', message: 'Você já está na versão mais recente.', buttons: ['Ok'] });
-      });
-    }
-    autoUpdater.on('error', () => {});
-    autoUpdater.checkForUpdates().catch(() => {});
-  } catch (_) {}
+  }
+  return windowsUpdater.check(manual);
 }
 
 // ── Ponte de impressão ──────────────────────────────────────────────────

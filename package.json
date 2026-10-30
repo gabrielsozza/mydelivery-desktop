@@ -1,7 +1,7 @@
 {
   "name": "mydelivery-desktop",
   "productName": "MyDelivery",
-  "version": "1.0.36",
+  "version": "1.0.37",
   "description": "MyDelivery Desktop — abre o painel MyDelivery numa janela de app com impressão automática nativa.",
   "author": "MyDelivery",
   "main": "main.js",
@@ -10,7 +10,7 @@
     "dist": "electron-builder --publish always",
     "dist:win": "electron-builder --win --publish always",
     "dist:mac": "electron-builder --mac --publish always",
-    "test": "node --test test/main-lifecycle.test.js test/window-recovery.test.js test/printing.test.js"
+    "test": "node --test test/main-lifecycle.test.js test/window-recovery.test.js test/printing.test.js test/app-updater.test.js"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
@@ -36,7 +36,8 @@
       "receipt-document.js",
       "print-settings.html",
       "print-settings.js",
-      "build/**/*"
+      "build/**/*",
+      "app-updater.js"
     ],
     "win": {
       "target": [
