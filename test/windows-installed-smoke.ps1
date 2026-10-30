@@ -58,13 +58,15 @@ try {
   if ($PreviousInstaller) {
     Install-App (Resolve-Path $PreviousInstaller).Path
     Assert-Starts 'Previous release'
-    $userDir=Join-Path $env:APPDATA 'mydelivery-desktop'
+    $previousHash=(Get-FileHash (Join-Path $installDir 'resources/app.asar') -Algorithm SHA256).Hash
+    $userDir=Join-Path $env:APPDATA 'MyDelivery'
     New-Item -ItemType Directory -Force -Path $userDir | Out-Null
     $settings=Join-Path $userDir 'printing.json'
     [IO.File]::WriteAllText($settings,'{"printerName":"CI test printer","width":58,"mode":"driver"}')
     $settingsHash=(Get-FileHash $settings -Algorithm SHA256).Hash
   }
   Install-App
+  if ($PreviousInstaller -and (Get-FileHash (Join-Path $installDir 'resources/app.asar') -Algorithm SHA256).Hash -eq $previousHash) { throw 'Upgrade did not replace application code' }
   if ($PreviousInstaller -and (Get-FileHash $settings -Algorithm SHA256).Hash -ne $settingsHash) { throw 'Upgrade changed printer preferences' }
   Assert-Starts 'Clean installation'
   Assert-Starts 'Reopen installed app'
