@@ -91,7 +91,7 @@ function criarJanela() {
         { label: 'Diminuir zoom', accelerator: 'CmdOrCtrl+-', click: () => win.webContents.setZoomFactor(Math.max(0.4, win.webContents.getZoomFactor() - 0.1)) },
         { label: 'Zoom padrão (75%)', accelerator: 'CmdOrCtrl+0', click: () => win.webContents.setZoomFactor(0.75) },
         { type: 'separator' },
-        { label: 'Verificar atualizações', click: () => checarAtualizacoes(true) },
+        { id: 'check-updates', label: 'Verificar atualizações', click: () => checarAtualizacoes(true) },
         { type: 'separator' },
         { label: 'Ferramentas (debug)', accelerator: 'CmdOrCtrl+Shift+I', click: () => win.webContents.toggleDevTools() },
         { type: 'separator' },
@@ -106,7 +106,7 @@ function criarJanela() {
 // ── Auto-atualização ────────────────────────────────────────────────────
 // A maior parte das novidades já entra sozinha (o app abre o site — recarregou,
 // apareceu). Isto aqui cuida só das mudanças do MOTOR do app (impressão, zoom).
-//   • Windows: electron-updater baixa e instala sozinho (sem custo, sem assinar).
+//   • Windows: baixa em segundo plano; instala somente pelo menu, com confirmação.
 //   • macOS: update silencioso exige assinatura Apple (paga). Sem ela, a gente
 //     só AVISA "tem versão nova" e abre o download — 1 clique.
 function semverMaior(a, b) {
@@ -164,6 +164,10 @@ function checarAtualizacoes(manual) {
     windowsUpdater = createAppUpdater({
       updater: require('electron-updater').autoUpdater,
       log: createUpdateLog(app.getPath('userData'), app.getVersion()),
+      onReady: () => {
+        const item = Menu.getApplicationMenu()?.getMenuItemById('check-updates');
+        if (item) item.label = 'Atualização pronta — instalar quando terminar';
+      },
       showDialog: options => win && !win.isDestroyed()
         ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)
     });

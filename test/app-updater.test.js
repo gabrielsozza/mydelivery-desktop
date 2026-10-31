@@ -18,11 +18,13 @@ test('Later keeps the existing app and disables installation on normal exit', as
   assert.equal(f.updater.disableDifferentialDownload, true);
   assert.equal(f.installs.length, 0);
   await f.controller.check();
-  assert.equal(f.dialogs.length, 1); // no repeated interruption after deferral
+  assert.equal(f.dialogs.length, 0); // background update never interrupts service
   assert.equal(f.downloads(), 1);
 });
 test('manual check offers the downloaded update again and explicitly restarts', async () => {
   const f = setup([1, 0]); await f.controller.check(); await f.controller.check(true);
+  assert.equal(f.installs.length, 0);
+  await f.controller.check(true);
   assert.deepEqual(f.installs, [[false, true]]);
   assert.equal(f.checks(), 1); assert.equal(f.updater.autoRunAppAfterInstall, true);
 });
@@ -31,7 +33,7 @@ test('overlapping checks share download and keep provider listeners intact', asy
   let resolve; f.updater.checkForUpdates = () => new Promise(r => { resolve = r; });
   const a = f.controller.check(), b = f.controller.check(true);
   assert.equal(a, b); resolve({ isUpdateAvailable: true }); await a;
-  assert.equal(f.downloads(), 1); assert.equal(f.dialogs.length, 1);
+  assert.equal(f.downloads(), 1); assert.equal(f.dialogs.length, 0);
   assert.ok(f.updater.listeners('error').includes(original));
 });
 test('failed download never installs, remains retryable, manual failure is explained', async () => {
@@ -71,4 +73,18 @@ test('diagnostics omit messages and sensitive data; logging failures are harmles
     const badlog = createUpdateLog(path.join(dir, 'app-update.log', 'not-a-directory'), '1');
     assert.doesNotThrow(() => badlog('error'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('background download only marks the menu ready; does not interrupt or install', async () => {
+  const updater = new EventEmitter(); let marked = 0, dialogs = 0, installs = 0;
+  updater.checkForUpdates = async () => ({ isUpdateAvailable: true });
+  updater.downloadUpdate = async () => updater.emit('update-downloaded');
+  updater.quitAndInstall = () => installs++;
+  const controller = createAppUpdater({ updater, onReady: () => marked++, showDialog: async () => { dialogs++; return {response: 0}; } });
+  await controller.check();
+  await controller.check();
+  assert.equal(marked, 1); assert.equal(dialogs, 0); assert.equal(installs, 0);
+  assert.equal(updater.autoInstallOnAppQuit, false);
+  await controller.check(true);
+  assert.equal(dialogs, 1); assert.equal(installs, 1);
 });

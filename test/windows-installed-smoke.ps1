@@ -23,6 +23,28 @@ function Install-App([string]$Package = $Installer) {
   if (!(Test-Path $exe)) { throw 'Installer did not create MyDelivery.exe' }
   Stop-TestApp
 }
+function Assert-Shortcut {
+  $shortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MyDelivery.lnk'
+  if (!(Test-Path $shortcutPath)) { throw 'Desktop shortcut is missing' }
+  $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+  if ($shortcut.TargetPath -ne $exe) { throw "Desktop shortcut points to the wrong executable: $($shortcut.TargetPath)" }
+  if (!(Test-Path $shortcut.TargetPath)) { throw 'Desktop shortcut target does not exist' }
+  Write-Output 'PASS: desktop shortcut points to the installed application'
+}
+function Assert-NormalExit {
+  $app = Start-Process -FilePath $exe -PassThru
+  for ($i=0; $i -lt 45; $i++) {
+    Start-Sleep -Seconds 1
+    $app.Refresh()
+    if ($app.HasExited) { throw 'App exited before the normal-exit test' }
+    if ($app.MainWindowHandle -ne 0) { break }
+  }
+  if (!$app.CloseMainWindow()) { throw 'Could not close the application normally' }
+  if (!$app.WaitForExit(30000)) { throw 'Application did not exit normally' }
+  if (!(Test-Path $exe)) { throw 'Application disappeared after normal exit' }
+  Assert-Shortcut
+  Write-Output 'PASS: normal exit preserves application and shortcut'
+}
 function Assert-PE([string]$file) {
   $bytes = [IO.File]::ReadAllBytes($file)
   if ($bytes.Length -lt 128 -or [BitConverter]::ToUInt16($bytes,0) -ne 0x5a4d) { throw "Invalid PE: $file" }
@@ -68,16 +90,20 @@ try {
   Install-App
   if ($PreviousInstaller -and (Get-FileHash (Join-Path $installDir 'resources/app.asar') -Algorithm SHA256).Hash -eq $previousHash) { throw 'Upgrade did not replace application code' }
   if ($PreviousInstaller -and (Get-FileHash $settings -Algorithm SHA256).Hash -ne $settingsHash) { throw 'Upgrade changed printer preferences' }
+  Assert-Shortcut
   Assert-Starts 'Clean installation'
+  Assert-NormalExit
   Assert-Starts 'Reopen installed app'
   Assert-Starts 'Third launch'
   if ($TestRepair) {
     $dll=Join-Path $installDir 'ffmpeg.dll';$before=(Get-FileHash $dll -Algorithm SHA256).Hash
     # Deliberately damage only the disposable CI installation, then verify repair.
     [IO.File]::WriteAllText($dll,'test damaged application DLL')
+    Remove-Item (Join-Path ([Environment]::GetFolderPath('Desktop')) 'MyDelivery.lnk')
     Install-App
     if ((Get-FileHash $dll -Algorithm SHA256).Hash -ne $before) { throw 'Reinstallation did not restore the damaged DLL' }
-    Assert-Starts 'Reinstallation repairs damaged DLL'
+    Assert-Shortcut
+    Assert-Starts 'Reinstallation repairs damaged DLL and missing shortcut'
     if ($PreviousInstaller -and (Get-FileHash $settings -Algorithm SHA256).Hash -ne $settingsHash) { throw 'Repair changed printer preferences' }
   }
 } finally { Stop-TestApp }
