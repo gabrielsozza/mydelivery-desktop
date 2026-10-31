@@ -1,12 +1,15 @@
 // Install only after an explicit choice, never during normal exit or Windows shutdown.
-function createAppUpdater({ updater, showDialog, log = () => {} }) {
+function createAppUpdater({ updater, showDialog, log = () => {}, onReady = () => {} }) {
   let checking = null, ready = false, installing = false;
   updater.autoDownload = false;
   updater.autoInstallOnAppQuit = false;
   updater.autoRunAppAfterInstall = true;
   // Prefer a complete, checksum-verified installer over patching an older package.
   updater.disableDifferentialDownload = true;
-  updater.on('update-downloaded', () => { ready = true; log('download-ready'); });
+  updater.on('update-downloaded', () => {
+    ready = true; log('download-ready');
+    try { onReady(); } catch (_) { /* Menu failure must not stop updates. */ }
+  });
   updater.on('error', error => {
     log('update-error', error);
     if (installing) {
@@ -17,7 +20,7 @@ function createAppUpdater({ updater, showDialog, log = () => {} }) {
   async function showFailure() {
     await showDialog({ type: 'warning', title: 'Atualização não concluída',
       message: 'Não foi possível concluir a atualização.',
-      detail: 'O MyDelivery continuará funcionando. Tente novamente em Ajuda → Verificar atualizações. Se o problema continuar, reinstale pelo site mydeliveryfood.com.br.', buttons: ['OK'] });
+      detail: 'O MyDelivery continuará funcionando. Tente novamente no menu MyDelivery → Verificar atualizações. Se o problema continuar, reinstale pelo site mydeliveryfood.com.br.', buttons: ['OK'] });
   }
   async function offerInstall() {
     const choice = await showDialog({ type: 'info', title: 'Atualização pronta',
@@ -43,7 +46,8 @@ function createAppUpdater({ updater, showDialog, log = () => {} }) {
           return;
         }
         await updater.downloadUpdate();
-        if (ready) await offerInstall();
+        // Automatic checks never interrupt service or restart the app.
+        if (ready && manual) await offerInstall();
       } catch (error) {
         log('check-failed', error);
         if (manual) await showFailure().catch(() => {});
