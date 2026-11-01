@@ -39,14 +39,11 @@ test('fiscal raster QR preserves pixels and validates truncated payloads', () =>
   assert.throws(() => receiptDocument(qr.subarray(0,9)), /incomplet[oa]/);
   assert.throws(() => receiptDocument(Buffer.from([29,118,48,0,255,255,255,255])), /inválida/);
 });
-test('OneNote always uses the installed driver, even with legacy raw preference', async t => {
+test('unconfigured printing never routes receipts to OneNote automatically', async t => {
   const f = setup(t);
   f.setPrinters([{name:'OneNote (Desktop)',isDefault:true}]);
-  const result = await f.service.print(sample);
-  assert.equal(result.ok, true); assert.equal(result.via, 'driver');
-  assert.equal(f.jobs[0].deviceName, 'OneNote (Desktop)'); assert.equal(f.jobs[0].silent, true);
-  assert.equal(f.raw.length, 0); assert.equal(f.windows[0].destroyed, true);
-  assert.equal(f.windows[0].options.webPreferences.javascript, false);
+  await assert.rejects(f.service.print(sample), /Escolha uma impressora/);
+  assert.equal(f.jobs.length, 0); assert.equal(f.raw.length, 0);
 });
 test('unconfigured thermal printer keeps direct transport after an app update', async t => {
   const f = setup(t);
@@ -102,6 +99,7 @@ test('concurrent receipts wait for each driver callback', async t => {
 });
 test('without a default, never picks an arbitrary virtual printer', () => {
   assert.throws(()=>selectPrinter([{name:'Microsoft Print to PDF'}]), /Escolha uma impressora/);
+  assert.throws(()=>selectPrinter([{name:'OneNote',isDefault:true}]), /Escolha uma impressora/);
   assert.equal(selectPrinter([{name:'OneNote'}, {name:'Thermal'}]).name,'Thermal');
   assert.equal(selectPrinter([{name:'OneNote',isDefault:true}, {name:'EPSON TM-T20'}]).name,'EPSON TM-T20');
   assert.equal(selectPrinter([{name:'OneNote',isDefault:true}, {name:'EPSON TM-T20'}], 'OneNote').name,'OneNote');

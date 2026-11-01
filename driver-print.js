@@ -14,7 +14,15 @@ function selectPrinter(printers, name) {
   // Preserve the previous automatic preference for a thermal printer. A
   // Windows update often makes OneNote the default despite a working POS.
   const thermal = p => !isVirtual(p.name) && /POS|thermal|t[eé]rmic|receipt|cupom|EPSON TM|TM-|T20|T88|58|80mm|Generic.*Text/i.test(p.name);
-  const selected = printers.find(p => p.isDefault && thermal(p)) || printers.find(thermal) || printers.find(p => p.isDefault) || printers.find(p => !isVirtual(p.name));
+  // A virtual destination such as OneNote is never a safe automatic fallback.
+  // Windows frequently promotes OneNote to the default printer after an update;
+  // choosing it here makes a store believe its thermal printer is working while
+  // receipts are silently sent to a notebook instead. Owners can still select a
+  // virtual destination explicitly when that is intentional.
+  const selected = printers.find(p => p.isDefault && thermal(p))
+    || printers.find(thermal)
+    || printers.find(p => p.isDefault && !isVirtual(p.name))
+    || printers.find(p => !isVirtual(p.name));
   if (!selected) throw new Error('Escolha uma impressora em MyDelivery > Configurar impressora.');
   return selected;
 }
