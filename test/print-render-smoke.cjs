@@ -16,7 +16,9 @@ ipcMain.handle('md:config-impressora', (_event, action, value) => {
 });
 app.whenReady().then(async () => {
   console.log('PRINT: creating settings window');
-  const ui = new BrowserWindow({show:false,width:660,height:820,webPreferences:{preload:path.join(__dirname,'../preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
+  // With software rendering, a hidden Windows window can wait indefinitely
+  // for its first captured frame. The real settings window is visible too.
+  const ui = new BrowserWindow({show:true,width:660,height:820,webPreferences:{preload:path.join(__dirname,'../preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
   await ui.loadFile(path.join(__dirname,'../print-settings.html'));
   console.log('PRINT: settings HTML loaded');
   const deadline = Date.now() + 5000;
