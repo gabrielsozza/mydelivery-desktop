@@ -28,11 +28,23 @@ app.whenReady().then(async () => {
   await win.loadURL('http://127.0.0.1:1').catch(() => {});
   await fallbackLoaded;
   assert.match(win.webContents.getURL(), /recovery\.html$/, 'connection failure shows recovery');
+  // Exercise the actual isolated preload and recovery controls, not loadURL
+  // directly: rapid clicks must not create a new application/browser window.
+  const status = await win.webContents.executeJavaScript('document.getElementById("failure-code").textContent');
+  assert.match(status, /-312|ERR_UNSAFE_PORT/, 'specific connection error is visible');
   const retryLoaded = loaded(win, url => url === 'https://mydeliveryfood.com.br/login.html');
-  await win.loadURL('https://mydeliveryfood.com.br/login.html').catch(() => {});
+  await win.webContents.executeJavaScript('document.getElementById("retry-panel").click(); document.getElementById("retry-panel").click();');
   await retryLoaded;
   assert.equal(win.webContents.getURL(), 'https://mydeliveryfood.com.br/login.html', 'retry opens live login');
-  console.log('SMOKE PASS: native window, hidden window recovery, offline recovery, online retry');
+  assert.equal(BrowserWindow.getAllWindows().length, 1, 'retry keeps one window');
+  const again = loaded(win, url => /recovery\.html$/.test(url));
+  await win.loadURL('http://127.0.0.1:1').catch(() => {});
+  await again;
+  const popupRetry = loaded(win, url => url === 'https://mydeliveryfood.com.br/login.html');
+  await win.webContents.executeJavaScript('window.open("https://mydeliveryfood.com.br/login.html")');
+  await popupRetry;
+  assert.equal(BrowserWindow.getAllWindows().length, 1, 'legacy popup retry stays in one window');
+  console.log('SMOKE PASS: native window, diagnostic error, repeated retry and popup retry stay in one window');
   clearTimeout(watchdog);
   app.exit(0);
 }).catch(error => { console.error(error); clearTimeout(watchdog); app.exit(1); });

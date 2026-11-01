@@ -18,6 +18,10 @@ The Windows tests run on Server 2022, including native x86 execution through WOW
 
 ## Limitations
 
+### Recovery screen (1.0.41)
+
+Retry uses authenticated local IPC to navigate the existing main window. Repeated clicks are locked while loading, and recovery popups are denied/routed to that same window. Browser fallback is handled independently of navigation-event ordering. The screen shows the actual Chromium error code and differentiates certificate trust, certificate date, DNS, offline and timeout errors. No certificate verification is bypassed and no trust roots are installed by this release. A missing Windows trust chain still requires diagnosis/repair on the affected machine; the recovery change does not claim to repair it.
+
 Electron 22 no longer receives security updates. This is a compatibility edition for legacy systems, not a supported security baseline. Windows 10/11 clients must continue to use the main installer. Windows 7 should have SP1, its applicable updates and valid HTTPS root certificates. Never disable certificate verification to work around missing system certificates.
 
 Sources:

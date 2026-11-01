@@ -3,6 +3,34 @@
 // dentro do app e mandar a impressão pela impressora nativa.
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
+// These controls are wired in the isolated preload and accepted by the main
+// process only from its own local recovery document, never from a web page.
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.location.protocol !== 'file:' || !window.location.pathname.endsWith('/recovery.html')) return;
+  const retry = document.getElementById('retry-panel');
+  const browser = document.getElementById('open-browser');
+  if (!retry || !browser) return;
+  retry.addEventListener('click', async () => {
+    if (retry.disabled) return;
+    retry.disabled = true; retry.textContent = 'Conectando…';
+    try {
+      const result = await ipcRenderer.invoke('md:recovery', 'retry');
+      if (result.ok) return;
+    } catch (_) {}
+    retry.disabled = false; retry.textContent = 'Tentar novamente';
+  });
+  browser.addEventListener('click', async () => {
+    browser.disabled = true;
+    try { await ipcRenderer.invoke('md:recovery', 'browser'); } catch (_) {}
+    browser.disabled = false;
+  });
+  ipcRenderer.invoke('md:recovery', 'status').then(result => {
+    if (!result.ok || result.code == null) return;
+    document.getElementById('failure-detail').textContent = result.message;
+    document.getElementById('failure-code').textContent = 'Código para o suporte: ' + (result.description || 'CONNECTION_FAILED') + ' (' + result.code + ')';
+  }).catch(() => {});
+});
+
 // ── Zoom padrão do app = 75% (igual marcar "75%" no navegador) ──────────────
 // Setar via webFrame AQUI no preload é o jeito confiável no Electron: roda no
 // processo renderer, antes da página desenhar, então NÃO sofre o bug de timing
@@ -21,7 +49,7 @@ try {
 contextBridge.exposeInMainWorld('myDeliveryDesktop', {
   isDesktop: true,
   platform: process.platform, // 'win32' | 'darwin'
-  versao: '1.0.40',
+  versao: '1.0.41',
 
   // Recebe os bytes ESC/POS (array de números) já montados pelo cupom e manda
   // pra impressora padrão (ou a escolhida). Retorna { ok, motivo }.

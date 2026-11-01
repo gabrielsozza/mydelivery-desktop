@@ -11,17 +11,19 @@
   strong { color: #d85600; font-size: 22px; }
   h1 { font-size: 26px; line-height: 1.25; margin: 28px 0 14px; }
   p { color: #666; line-height: 1.6; }
-  a { display: block; text-align: center; padding: 14px 18px; margin-top: 14px; border: 1px solid #d7d0ca; border-radius: 10px; color: #303030; font-weight: 600; text-decoration: none; }
-  a.primary { background: #e95f00; border-color: #e95f00; color: white; }
-  a:focus-visible { outline: 3px solid #222; outline-offset: 3px; }
+  button { display: block; width: 100%; font: inherit; cursor: pointer; text-align: center; padding: 14px 18px; margin-top: 14px; border: 1px solid #d7d0ca; border-radius: 10px; background: white; color: #303030; font-weight: 600; }
+  button.primary { background: #e95f00; border-color: #e95f00; color: white; }
+  button:focus-visible { outline: 3px solid #222; outline-offset: 3px; }
+  button:disabled { opacity: .65; cursor: wait; }
   small { display: block; margin-top: 24px; color: #777; line-height: 1.5; }
 </style>
 <main>
   <strong>MyDelivery</strong>
   <h1>Não foi possível carregar o painel</h1>
-  <p>Confira a conexão com a internet e tente novamente. Se o problema continuar, abra o painel pelo navegador para continuar atendendo.</p>
-  <a class="primary" href="https://mydeliveryfood.com.br/login.html">Tentar novamente</a>
-  <a href="https://mydeliveryfood.com.br/login.html?desktop-browser=1">Abrir no navegador</a>
+  <p id="failure-detail">Confira a conexão com a internet e tente novamente. Se o problema continuar, abra o painel pelo navegador para continuar atendendo.</p>
+  <p id="failure-code"></p>
+  <button type="button" class="primary" id="retry-panel">Tentar novamente</button>
+  <button type="button" id="open-browser">Abrir no navegador</button>
   <small>Seus dados de acesso foram mantidos. A impressão automática pelo aplicativo volta a funcionar quando o painel abrir nele.</small>
 </main>
 </html>

@@ -22,6 +22,7 @@ if (!gotLock) { app.quit(); }
 
 let win = null;
 let printingWindow = null;
+let windowRecovery = null;
 const printing = createPrintingService({ app, BrowserWindow, rawPrint: printModule.imprimirRaw, getContents: () => win.webContents });
 
 function abrirConfiguracaoImpressora() {
@@ -59,7 +60,8 @@ function criarJanela() {
   currentWindow.on('closed', () => {
     if (win === currentWindow) win = null;
   });
-  attachWindowRecovery(currentWindow, { appUrl: APP_URL, shell, dialog });
+  windowRecovery = attachWindowRecovery(currentWindow, { appUrl: APP_URL, shell, dialog });
+  const recovery = windowRecovery;
   // loadURL rejects on connection failures; did-fail-load shows recovery.
   currentWindow.loadURL(APP_URL).catch(() => {});
 
@@ -73,6 +75,7 @@ function criarJanela() {
   // DENTRO do app pra o window.print funcionar. Só links externos http(s)
   // (WhatsApp, etc.) é que vão pro navegador padrão.
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (recovery.blockRecoveryPopup(url)) return { action: 'deny' };
     if (!url || url === 'about:blank' || url.startsWith('about:blank') ||
         url.startsWith('data:') || url.startsWith('blob:') ||
         url.startsWith('https://mydeliveryfood.com.br')) {
@@ -188,6 +191,7 @@ function checarAtualizacoes(manual) {
 }
 
 // ── Ponte de impressão ──────────────────────────────────────────────────
+ipcMain.handle('md:recovery', (event, action) => windowRecovery ? windowRecovery.handle(event, action) : { ok: false });
 // Accept the existing web receipt format, but use the installed Windows
 // driver by default. Virtual printers must never receive thermal commands.
 function trustedPrintSender(event) {
