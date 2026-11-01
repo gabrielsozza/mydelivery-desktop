@@ -6,6 +6,18 @@ navegador, sem WebUSB, sem `.bat`.
 
 **Não altera nada do sistema web.** Só carrega `https://mydeliveryfood.com.br`.
 
+## Compatibilidade Windows
+
+O instalador 1.0.39 inclui os executáveis x86 (32 bits) e x64 (64 bits) e
+seleciona a arquitetura automaticamente. Requer Windows 10 ou superior.
+Windows 7, 8 e 8.1 não são suportados; o instalador interrompe a instalação
+nesses sistemas com uma orientação clara. Gerar x86 não adiciona suporte ao Windows 7.
+
+O pipeline valida executável e DLLs x86, abertura e reabertura do aplicativo,
+a presença dos dois pacotes no instalador, e instalação/atualização/reparo x64.
+O teste x86 roda sob WOW64 no runner Windows; não substitui uma validação no
+notebook físico de 32 bits. Atualizações futuras devem manter ambas as arquiteturas.
+
 ## Rodar em modo teste (no seu Mac)
 
 ```bash
