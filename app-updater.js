@@ -74,3 +74,15 @@ function createUpdateLog(directory, version) {
   };
 }
 module.exports = { createAppUpdater, createUpdateLog };
+
+// The legacy runtime cannot run modern Electron releases. No native updater is
+// created, no modern feed is requested and normal exit never installs a package.
+async function checkLegacyUpdates(manual, { showDialog, openExternal }) {
+  if (!manual) return;
+  const result = await showDialog({ type: 'info', title: 'MyDelivery para Windows 7',
+    message: 'Esta é a edição compatível com Windows 7.',
+    detail: 'O painel é atualizado ao recarregar. Para atualizar o aplicativo, use somente o instalador Windows 7 na página de downloads.',
+    buttons: ['Abrir downloads Windows 7', 'Fechar'], defaultId: 1, cancelId: 1 });
+  if (result.response === 0) await openExternal('https://mydeliveryfood.com.br/#app-windows7');
+}
+module.exports.checkLegacyUpdates = checkLegacyUpdates;

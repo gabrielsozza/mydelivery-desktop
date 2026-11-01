@@ -109,7 +109,7 @@ if (-not $PrinterName -or $PrinterName -eq '') {
         $st = "$($_.PrinterStatus)"
         # PrinterStatus: Normal=OK. Offline/Error/PaperOut/Paused etc = skip.
         $ok = ($st -eq 'Normal' -or $st -eq '' -or $st -eq 'Idle')
-        [PSCustomObject]@{ Name = $_.Name; Default = $false; Ok = $ok; Fonte = 'Get-Printer' }
+        (New-Object PSObject -Property @{ Name = $_.Name; Default = $false; Ok = $ok; Fonte = 'Get-Printer' })
       }
     }
   } catch {}
@@ -122,7 +122,7 @@ if (-not $PrinterName -or $PrinterName -eq '') {
         # WorkOffline=true → skip. PrinterStatus 3=Idle, 4=Printing = ok.
         # 1=Other, 2=Unknown, 5=Warmup, 6=StoppedPrinting, 7=Offline = skip.
         $ok = (-not $_.WorkOffline) -and ($_.PrinterStatus -eq 3 -or $_.PrinterStatus -eq 4)
-        [PSCustomObject]@{ Name = $_.Name; Default = [bool]$_.Default; Ok = $ok; Fonte = 'CIM' }
+        (New-Object PSObject -Property @{ Name = $_.Name; Default = [bool]$_.Default; Ok = $ok; Fonte = 'CIM' })
       }
     }
   } catch {}
@@ -134,7 +134,7 @@ if (-not $PrinterName -or $PrinterName -eq '') {
       if ($wmi) {
         $todas += $wmi | ForEach-Object {
           $ok = (-not $_.WorkOffline) -and ($_.PrinterStatus -eq 3 -or $_.PrinterStatus -eq 4)
-          [PSCustomObject]@{ Name = $_.Name; Default = [bool]$_.Default; Ok = $ok; Fonte = 'WMI' }
+          (New-Object PSObject -Property @{ Name = $_.Name; Default = [bool]$_.Default; Ok = $ok; Fonte = 'WMI' })
         }
       }
     } catch {}
@@ -146,7 +146,7 @@ if (-not $PrinterName -or $PrinterName -eq '') {
       $regPath = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Devices'
       $reg = Get-Item -Path $regPath -ErrorAction SilentlyContinue
       if ($reg) {
-        foreach ($n in $reg.Property) { $todas += [PSCustomObject]@{ Name = $n; Default = $false; Ok = $true; Fonte = 'Registry' } }
+        foreach ($n in $reg.Property) { $todas += (New-Object PSObject -Property @{ Name = $n; Default = $false; Ok = $true; Fonte = 'Registry' }) }
       }
     } catch {}
   }

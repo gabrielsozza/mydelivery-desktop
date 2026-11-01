@@ -42,6 +42,7 @@ function criarJanela() {
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       // Pedidos continuam chegando e tocando com a janela minimizada.
@@ -158,6 +159,14 @@ function avisarAtualizacaoMac(manual) {
 let windowsUpdater = null;
 function checarAtualizacoes(manual) {
   if (process.platform === 'darwin') { avisarAtualizacaoMac(manual); return; }
+  // This build must never load the modern Windows update feed.
+  if (require('./package.json').windowsLegacy) {
+    const { checkLegacyUpdates } = require('./app-updater');
+    return checkLegacyUpdates(manual, {
+      showDialog: options => dialog.showMessageBox(options),
+      openExternal: url => shell.openExternal(url)
+    });
+  }
   if (!app.isPackaged) return;
   if (!windowsUpdater) {
     const { createAppUpdater, createUpdateLog } = require('./app-updater');

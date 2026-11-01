@@ -1,0 +1,37 @@
+name: windows7-legacy
+on:
+  push:
+    branches: [fix/windows7-legacy]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm test
+      - name: Check actual legacy Electron and printer rendering
+        run: |
+          npx electron test/electron-smoke.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron test/print-render-smoke.cjs
+      - name: Build legacy 32 and 64 bit installer
+        run: npm run dist:win
+      - name: Check 32 bit application and DLLs
+        run: ./test/windows-installed-smoke.ps1 -Installer dist/MyDelivery-Windows7-Setup.exe -UnpackedDirectory dist/win-ia32-unpacked -ExpectedArch ia32
+      - name: Check universal installer
+        run: |
+          $listing = & 7z l dist/MyDelivery-Windows7-Setup.exe
+          if (($listing -join "`n") -notmatch 'app-32.7z' -or ($listing -join "`n") -notmatch 'app-64.7z') { throw 'Missing architecture' }
+      - name: Check installation, reopening and repair
+        run: ./test/windows-installed-smoke.ps1 -Installer dist/MyDelivery-Windows7-Setup.exe -TestRepair
+      - name: Save verified artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mydelivery-windows7
+          path: dist/MyDelivery-Windows7-Setup.exe
+          if-no-files-found: error
