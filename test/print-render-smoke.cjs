@@ -15,8 +15,10 @@ ipcMain.handle('md:config-impressora', (_event, action, value) => {
   return { ok:true, settings, automaticPrinter:'EPSON TM-T20', printers:[{name:'OneNote (Desktop)',isDefault:true},{name:'EPSON TM-T20'}] };
 });
 app.whenReady().then(async () => {
+  console.log('PRINT: creating settings window');
   const ui = new BrowserWindow({show:false,width:660,height:820,webPreferences:{preload:path.join(__dirname,'../preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
   await ui.loadFile(path.join(__dirname,'../print-settings.html'));
+  console.log('PRINT: settings HTML loaded');
   const deadline = Date.now() + 5000;
   while (await ui.webContents.executeJavaScript('document.querySelector("#printer").disabled')) {
     if (Date.now() > deadline) throw Error('Printer settings failed to load');
@@ -31,10 +33,13 @@ app.whenReady().then(async () => {
   assert.equal(settings.kitchen.width,58);
   assert.match(await ui.webContents.executeJavaScript('document.querySelector("#status").textContent'), /salva/);
   fs.writeFileSync(path.join(output,'printer-settings.png'), (await ui.webContents.capturePage()).toPNG());
+  console.log('PRINT: settings saved and captured');
   ui.destroy();
   const receipt = new BrowserWindow({show:false,width:420,height:1200,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,javascript:true}});
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(require('./fixtures/receipt.json'))));
+  console.log('PRINT: receipt HTML loaded; generating PDF');
   const pdf = await receipt.webContents.printToPDF({printBackground:true,pageSize:'A4'});
+  console.log('PRINT: PDF generated');
   assert.ok(pdf.length > 5000);
   fs.writeFileSync(path.join(output,'receipt.pdf'),pdf);
   fs.writeFileSync(path.join(output,'receipt.png'),(await receipt.webContents.capturePage()).toPNG());

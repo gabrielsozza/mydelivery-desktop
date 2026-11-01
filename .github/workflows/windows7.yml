@@ -7,6 +7,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-2022
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,6 +16,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Check actual legacy Electron and printer rendering
+        timeout-minutes: 2
         run: |
           npx electron test/electron-smoke.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
