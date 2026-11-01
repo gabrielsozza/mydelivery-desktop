@@ -35,13 +35,8 @@ app.whenReady().then(async () => {
   fs.writeFileSync(path.join(output,'printer-settings.png'), (await ui.webContents.capturePage()).toPNG());
   console.log('PRINT: settings saved and captured');
   ui.destroy();
-  const receipt = new BrowserWindow({show:false,width:420,height:1200,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,javascript:true}});
+  const receipt = new BrowserWindow({show:true,width:420,height:1200,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,javascript:true}});
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(require('./fixtures/receipt.json'))));
-  console.log('PRINT: receipt HTML loaded; generating PDF');
-  const pdf = await receipt.webContents.printToPDF({printBackground:true,pageSize:'A4'});
-  console.log('PRINT: PDF generated');
-  assert.ok(pdf.length > 5000);
-  fs.writeFileSync(path.join(output,'receipt.pdf'),pdf);
   fs.writeFileSync(path.join(output,'receipt.png'),(await receipt.webContents.capturePage()).toPNG());
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(require('./fixtures/receipt.json'),58)));
   const narrow = await receipt.webContents.executeJavaScript('({width:document.body.clientWidth,scroll:document.body.scrollWidth})');
@@ -116,6 +111,13 @@ app.whenReady().then(async () => {
     assert.ok(itemFonts.length > 0 && itemFonts.every(size=>size === (width === 58 ? "12.5px" : "15.5px")));
     fs.writeFileSync(path.join(output,`kitchen-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
+  console.log('PRINT: all receipt layout checks passed');
+  await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(require('./fixtures/receipt.json'))));
+  console.log('PRINT: receipt HTML loaded; generating PDF');
+  const pdf = await receipt.webContents.printToPDF({printBackground:true,pageSize:'A4'});
+  console.log('PRINT: PDF generated');
+  assert.ok(pdf.length > 5000);
+  fs.writeFileSync(path.join(output,'receipt.pdf'),pdf);
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);
   app.exit(0);

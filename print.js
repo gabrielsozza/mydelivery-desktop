@@ -143,7 +143,7 @@ if (-not $PrinterName -or $PrinterName -eq '') {
   # 4) Registry — ultimo recurso
   if ($todas.Count -eq 0) {
     try {
-      $regPath = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\Devices'
+      $regPath = 'Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Devices'
       $reg = Get-Item -Path $regPath -ErrorAction SilentlyContinue
       if ($reg) {
         foreach ($n in $reg.Property) { $todas += (New-Object PSObject -Property @{ Name = $n; Default = $false; Ok = $true; Fonte = 'Registry' }) }
