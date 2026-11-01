@@ -1,6 +1,7 @@
 // Exercises the actual Chromium renderer and preload without printing paper,
 // connecting to a restaurant or changing the user's printer preferences.
 const { app, BrowserWindow, ipcMain } = require('electron');
+if (require('../package.json').windowsLegacy) app.disableHardwareAcceleration();
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), assert = require('node:assert/strict');
 const { receiptDocument, kitchenReceipt } = require('../receipt-document');
 const output = process.env.MD_PRINT_TEST_OUTPUT || fs.mkdtempSync(path.join(os.tmpdir(), 'md-print-render-'));

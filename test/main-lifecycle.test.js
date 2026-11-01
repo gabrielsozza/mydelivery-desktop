@@ -15,6 +15,7 @@ async function boot(gotLock = true) {
     quit: () => { quitCalls++; },
     isReady: () => true,
     whenReady: () => { readyCalls++; return Promise.resolve(); },
+    disableHardwareAcceleration: () => {},
     setLoginItemSettings: () => {}
   });
   class BrowserWindow extends EventEmitter {

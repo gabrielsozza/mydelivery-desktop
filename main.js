@@ -12,6 +12,9 @@ const { createPrintingService, selectPrinter } = require('./driver-print');
 // URL do painel do dono. Trocar aqui se um dia mudar o domínio.
 const APP_URL = 'https://mydeliveryfood.com.br/login.html';
 
+// Older Windows graphics drivers can crash the GPU process before opening.
+if (require('./package.json').windowsLegacy) app.disableHardwareAcceleration();
+
 // Garante instância única — abrir o atalho de novo foca a janela existente
 // em vez de abrir duas (evita dois apps imprimindo o mesmo pedido).
 const gotLock = app.requestSingleInstanceLock();
