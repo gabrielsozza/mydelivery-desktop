@@ -34,6 +34,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify 32-bit executable and native libraries
+        shell: pwsh
+        run: ./test/windows-installed-smoke.ps1 -Installer dist/MyDelivery-Setup.exe -UnpackedDirectory dist/win-ia32-unpacked -ExpectedArch ia32
+      - name: Verify universal installer contains both architectures
+        shell: pwsh
+        run: |
+          $listing = & 7z l dist/MyDelivery-Setup.exe
+          if (($listing -join "`n") -notmatch 'app-32.7z' -or ($listing -join "`n") -notmatch 'app-64.7z') { throw 'Installer is missing an architecture' }
       - name: Download previous Windows release for upgrade test
         shell: pwsh
         env:

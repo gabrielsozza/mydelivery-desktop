@@ -1,8 +1,8 @@
 {
   "name": "mydelivery-desktop",
   "productName": "MyDelivery",
-  "version": "1.0.38",
-  "description": "MyDelivery Desktop — abre o painel MyDelivery numa janela de app com impressão automática nativa.",
+  "version": "1.0.39",
+  "description": "MyDelivery Desktop \u2014 abre o painel MyDelivery numa janela de app com impress\u00e3o autom\u00e1tica nativa.",
   "author": "MyDelivery",
   "main": "main.js",
   "scripts": {
@@ -44,7 +44,8 @@
         {
           "target": "nsis",
           "arch": [
-            "x64"
+            "x64",
+            "ia32"
           ]
         }
       ],
@@ -55,7 +56,8 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
-      "shortcutName": "MyDelivery"
+      "shortcutName": "MyDelivery",
+      "include": "build/windows-requirements.nsh"
     },
     "mac": {
       "target": [

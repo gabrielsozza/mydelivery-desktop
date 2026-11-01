@@ -1,7 +1,8 @@
-param([Parameter(Mandatory=$true)][string]$Installer,[switch]$TestRepair,[string]$PreviousInstaller)
+param([Parameter(Mandatory=$true)][string]$Installer,[switch]$TestRepair,[string]$PreviousInstaller,[string]$UnpackedDirectory,[ValidateSet("x64","ia32")][string]$ExpectedArch="x64")
 $ErrorActionPreference = 'Stop'
 if ($env:CI -ne 'true') { throw 'Only run on a disposable CI runner' }
 $Installer = (Resolve-Path $Installer).Path
+$machine = if ($ExpectedArch -eq "ia32") { 0x14c } else { 0x8664 }
 $installDir = Join-Path $env:LOCALAPPDATA 'MyDelivery-installed-smoke'
 $exe = Join-Path $installDir 'MyDelivery.exe'
 function Stop-TestApp {
@@ -50,7 +51,7 @@ function Assert-PE([string]$file) {
   if ($bytes.Length -lt 128 -or [BitConverter]::ToUInt16($bytes,0) -ne 0x5a4d) { throw "Invalid PE: $file" }
   $offset = [BitConverter]::ToInt32($bytes,0x3c)
   if ($offset -lt 0 -or ($offset+26) -gt $bytes.Length -or [BitConverter]::ToUInt32($bytes,$offset) -ne 0x4550) { throw "Invalid PE header: $file" }
-  if ([BitConverter]::ToUInt16($bytes,$offset+4) -ne 0x8664) { throw "Wrong architecture (expected x64): $file" }
+  if ([BitConverter]::ToUInt16($bytes,$offset+4) -ne $machine) { throw "Wrong architecture (expected $ExpectedArch): $file" }
 }
 function Assert-Starts([string]$label) {
   Assert-PE $exe
@@ -74,9 +75,16 @@ function Assert-Starts([string]$label) {
   Start-Sleep -Seconds 3
   $app.Refresh();if($app.HasExited){throw "Window crashed ($label): $($app.ExitCode)"}
   Stop-TestApp
-  Write-Output "PASS: $label - x64 native DLLs, Electron loader, installed application window"
+  Write-Output "PASS: $label - $ExpectedArch native DLLs, Electron loader, installed application window"
 }
 try {
+  if ($UnpackedDirectory) {
+    $installDir = (Resolve-Path $UnpackedDirectory).Path
+    $exe = Join-Path $installDir 'MyDelivery.exe'
+    Assert-Starts 'Packaged architecture runtime'
+    Assert-Starts 'Reopen packaged architecture runtime'
+    exit 0
+  }
   if ($PreviousInstaller) {
     Install-App (Resolve-Path $PreviousInstaller).Path
     Assert-Starts 'Previous release'
