@@ -6,3 +6,6 @@ build/icon.iconset/
 
 *.keystore
 MyDelivery.apk
+android/.gradle/
+android/build/
+android/*/build/

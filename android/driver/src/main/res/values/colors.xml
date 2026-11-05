@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="driver_background">#0B0D12</color>
+    <color name="driver_orange">#FF6B00</color>
+    <color name="driver_white">#FFFFFF</color>
+</resources>

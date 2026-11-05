@@ -1,0 +1,46 @@
+name: build-driver-app
+
+on:
+  push:
+    tags: ['motoboy-*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android-driver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Aceitar licenças do Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+      - name: Decodificar keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "${{ runner.temp }}/release.keystore"
+      - name: Gerar aplicativo assinado do motoboy
+        working-directory: android
+        run: gradle :driver:assembleRelease --no-daemon --stacktrace
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: Preparar APK
+        run: cp android/driver/build/outputs/apk/release/driver-release.apk MyDelivery-Motoboy.apk
+      - name: Publicar instalador
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: MyDelivery Motoboy 1.0.0
+          body: Aplicativo Android do motoboy com acesso por slug da loja e PIN, rotas, atualização de status e notificações de novas entregas.
+          files: MyDelivery-Motoboy.apk
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
