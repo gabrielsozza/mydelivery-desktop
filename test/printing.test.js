@@ -163,6 +163,28 @@ for(const mode of ['driver','raw']) test('only the kitchen copy is filtered with
   const direct=mode==='raw'?f.raw.at(-1)[0].toString('ascii'):f.windows.at(-1).html;
   assert.ok(!direct.includes('Nome privado')); assert.ok(direct.includes('X Burger'));
 });
+for(const mode of ['driver','raw']) test('table and counter kitchen-only jobs never print at the cashier with '+mode, async t => {
+  const f=setup(t); f.setPrinters([{name:'Caixa'},{name:'Cozinha 2'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode,kitchen:{printerName:'Cozinha 2',width:58,mode}});
+  await f.service.print(kitchenOrder({type:'MESA'}),null,{
+    target:'kitchen', forceKitchenCompact:true, restaurantSlug:'talentos-pizzas'
+  });
+  assert.equal(mode==='raw'?f.raw.length:f.jobs.length,1);
+  const destination=mode==='raw'?f.raw[0][1]:f.jobs[0].deviceName;
+  const content=mode==='raw'?f.raw[0][0].toString('ascii'):f.windows[0].html;
+  assert.equal(destination,'Cozinha 2');
+  assert.match(content,/Pedido 123/); assert.match(content,/X Burger/);
+  for(const privateValue of ['Nome privado','11999999999','Pagamento','PIX','Subtotal:','Total:','R$'])
+    assert.doesNotMatch(content,new RegExp(privateValue.replace('$','\\$')));
+});
+test('kitchen-only jobs require a distinct configured kitchen printer', async t => {
+  const f=setup(t); f.setPrinters([{name:'Caixa'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:null});
+  await assert.rejects(f.service.print(kitchenOrder(),null,{target:'kitchen'}),/segunda impressora/);
+  await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:{printerName:'Caixa',width:58,mode:'raw'}});
+  await assert.rejects(f.service.print(kitchenOrder(),null,{target:'kitchen'}),/diferente/);
+  assert.equal(f.raw.length,0);
+});
 test('a shared cashier/kitchen printer retains its single complete cashier copy', async t => {
   const f=setup(t); f.setPrinters([{name:'Caixa'}]);
   await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:{printerName:'Caixa',width:58,mode:'raw'}});
@@ -302,4 +324,55 @@ test('Talentos: item, flavor and total cents retain a dedicated right gutter', (
     assert.deepEqual(rows.map(r=>r.match(/R\$ [\d.,]+/)[0]), ['R$ 37,00','R$ 18,50','R$ 18,50','R$ 37,00','R$ 10,00','R$ 47,00']);
     for (const r of rows) assert.ok(r.length <= (width === 58 && r.includes('Frango') ? 38 : width === 58 ? 28 : 38), r);
   }
+});
+
+test('JR photo: long preparation items wrap in readable type instead of shrinking',()=>{
+  const name='(1) Smash Salada + R$ 18,99 Leve Outro Item';
+  const bytes=Buffer.from('Itens\n'+name+'\n  + Sem cebola, com molho separado\n-------------------------------\nPagamento\n');
+  for(const width of [58,80]){
+    const html=receiptDocument(bytes,width),font=width===58?12.5:15.5;
+    const rows=[...html.matchAll(/<div class="line[^\"]* preparation"[^>]*>(.*?)<\/div>/g)].map(m=>m[1]);
+    assert.ok(rows.length>=2);
+    assert.ok(html.includes(name),'currency inside a product name remains part of its name');
+    assert.doesNotMatch(html,/class="line amount-row preparation"/);
+    for(const row of rows) for(const size of row.matchAll(/font-size:([\d.]+)px/g)) assert.equal(Number(size[1]),font);
+    assert.match(html,/\.preparation\{white-space:normal;overflow-wrap:break-word/);
+    const raw=thermalReceipt(Buffer.from(name+'\n'),width);
+    const lines=visibleRows(raw);assert.equal(lines.join(' '),name);assert.ok(lines.every(r=>r.length<=(width===58?30:44)));
+    assert.ok(!raw.includes(Buffer.from([27,33,9])),'kitchen name must use normal native font');
+  }
+});
+
+for(const mode of ['driver','raw']) test('only Talentos pizzas receives a complete kitchen copy with '+mode,async t=>{
+  const f=setup(t);f.setPrinters([{name:'Caixa'},{name:'Cozinha'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode,kitchen:{printerName:'Cozinha',width:80,mode}});
+  const receipt=kitchenOrder();
+  await f.service.print(receipt,null,{restaurantSlug:'talentos-pizzas'});
+  if(mode==='raw')assert.deepEqual(f.raw[0][0],f.raw[1][0]);else assert.equal(f.windows[0].html,f.windows[1].html);
+  for(const slug of [undefined,'outra-loja','talentos-pizzas-2']){
+    await f.service.print(receipt,'Cozinha',{restaurantSlug:slug});
+    const copy=mode==='raw'?f.raw.at(-1)[0].toString('ascii'):f.windows.at(-1).html;
+    assert.doesNotMatch(copy,/Nome:|Forma de Pagamento:|Subtotal:/);
+  }
+  await f.service.print(receipt,'Cozinha',{restaurantSlug:'talentos-pizzas'});
+  const complete=mode==='raw'?f.raw.at(-1)[0].toString('ascii'):f.windows.at(-1).html;
+  assert.match(complete,/Nome:/);assert.match(complete,/Subtotal:/);
+});
+
+ test('driver keeps item names together instead of applying native column wrapping',()=>{
+ const bytes=Buffer.from('Itens\n(1) Pizza Media\n                       R$ 37,00\n  1/2 Calabresa\n  1/2 Portuguesa\n(1) Refrigerante 1 L     R$ 12,00\n  + Coca-Cola (R$ 12,00)\n-------------------------------\n');
+ for(const width of [58,80]) { const html=receiptDocument(bytes,width); assert.match(html,/>\(1\) Pizza Media<\/span>/); assert.match(html,/>\(1\) Refrigerante 1 L<\/span>/); assert.match(html,/1\/2 Calabresa/); assert.match(html,/1\/2 Portuguesa/); assert.match(html,/R\$ 37,00/); assert.match(html,/R\$ 12,00/); }
+ });
+
+test('four destinations preserve existing settings and resume only failed copies',async t=>{
+ const f=setup(t);f.setPrinters(['Caixa','Cozinha','Bar','Expedição'].map(name=>({name})));
+ const extra=(printerName,receipt)=>({printerName,width:58,mode:'raw',receipt});
+ await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:{printerName:'Cozinha',width:80,mode:'raw'},extras:[extra('Bar','kitchen'),extra('Expedição','full')]});
+ let fail=true;const sent=[];f.options.rawPrint=async(bytes,name)=>{if(name==='Bar'&&fail)throw Error('Sem conexão');sent.push(name);};
+ const service=createPrintingService(f.options);await assert.rejects(service.print(kitchenOrder()),/Sem conexão/);assert.deepEqual(sent,['Caixa','Cozinha','Expedição']);
+ fail=false;await service.print(kitchenOrder());assert.deepEqual(sent,['Caixa','Cozinha','Expedição','Bar']);assert.equal(service.settings().extras.length,2);
+ await assert.rejects(service.save({...service.settings(),extras:[extra('Bar','full'),extra('Bar','full'),extra('Bar','full')]}),/quatro/);
+});
+test('duplicate extra destination sends a single copy',async t=>{
+ const f=setup(t);f.setPrinters([{name:'Caixa'}]);await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:null,extras:[{printerName:'Caixa',width:58,mode:'raw',receipt:'kitchen'}]});await f.service.print(kitchenOrder());assert.equal(f.raw.length,1);assert.match(f.raw[0][0].toString('ascii'),/Cliente/);
 });

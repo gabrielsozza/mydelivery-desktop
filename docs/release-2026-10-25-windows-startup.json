@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-25",
+  "reportedIssue": "Mana Pizzas Windows native loader 0xc000007b; application previously worked",
+  "confirmedFinding": "Website installer was v1.0.31; updated to published v1.0.33",
+  "oldSha256": "0543b74b0a5f612c438047685073ff3602c64699e6bbcaecdaef4442c270c2f3",
+  "installerVersion": "1.0.33",
+  "newSha256": "5bd5d69bb25d91ff94851a2176b9c134ea2d876ef64c6fce80cd3ece36b6bad6",
+  "netlifyDeployment": "6ade71ccd21a7e9e5280d913",
+  "windowsValidationRun": 40234674165,
+  "windowsValidation": "SUCCESS: native x64 files, installed executable/window, reinstallation restores deliberately damaged ffmpeg.dll and application opens",
+  "ciCommit": "13336ed",
+  "customerComputerVerified": false,
+  "requiredAction": "Close MyDelivery and run current installer in the same installation directory; do not delete application data",
+  "rootCauseOnCustomerComputer": "Not determined without access to the Windows machine"
+}

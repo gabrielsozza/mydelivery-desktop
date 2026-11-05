@@ -24,7 +24,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   function settings() {
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'printing.json'), 'utf8')); } catch (_) {}
-    return { printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
+    return { printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', extras: Array.isArray(saved.extras)?saved.extras.slice(0,2).filter(x=>x&&typeof x.printerName==='string'&&x.printerName).map(x=>({printerName:x.printerName,width:x.width===58?58:80,mode:['auto','driver','raw'].includes(x.mode)?x.mode:'auto',receipt:x.receipt==='full'?'full':'kitchen'})):[], kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
   }
   async function list() { return getContents().getPrintersAsync(); }
   async function save(value) {
@@ -39,14 +39,24 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       if (k.mode === 'raw' && isVirtual(destination.name)) throw new Error('Na cozinha, selecione o driver do sistema para impressoras virtuais.');
       kitchen = { printerName: k.printerName, width: k.width, mode: k.mode };
     }
+    const extras = value.extras === undefined ? settings().extras : value.extras;
+    if(!Array.isArray(extras)||extras.length>2)throw new Error('Configure no máximo quatro impressoras.');
+    for(const extra of extras){
+      if(!extra||typeof extra.printerName!=='string'||!extra.printerName||![58,80].includes(extra.width)||!['auto','raw','driver'].includes(extra.mode)||!['full','kitchen'].includes(extra.receipt))throw new Error('Confira as opções das impressoras adicionais.');
+      const target=selectPrinter(await list(),extra.printerName);
+      if(extra.mode==='raw'&&isVirtual(target.name))throw new Error('Escolha o driver para impressoras virtuais.');
+    }
     const file = path.join(app.getPath('userData'), 'printing.json');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file + '.tmp', JSON.stringify({ printerName: value.printerName, width: value.width, mode: value.mode, kitchen }));
+    fs.writeFileSync(file + '.tmp', JSON.stringify({ printerName: value.printerName, width: value.width, mode: value.mode, kitchen, extras }));
     fs.renameSync(file + '.tmp', file);
     return settings();
   }
-  async function sendOne(bytes, config, printer) {
-    if (config.label === 'Cozinha') bytes = kitchenReceipt(bytes);
+  async function sendOne(bytes, config, printer, context) {
+    // Talentos pizzas explicitly requested the complete cashier copy in its kitchen.
+    const fullKitchen = context && context.restaurantSlug === 'talentos-pizzas'
+      && context.forceKitchenCompact !== true;
+    if ((config.label === 'Cozinha'||config.receipt==='kitchen') && !fullKitchen) bytes = kitchenReceipt(bytes);
     // Preserve pre-1.0.19 thermal transport unless the owner explicitly chose a driver.
     if ((config.mode === 'raw' || config.mode === 'auto') && !isVirtual(printer.name)) {
       await rawPrint(thermalReceipt(bytes, config.width), printer.name);
@@ -82,21 +92,33 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     fs.writeFileSync(progressFile() + '.tmp', JSON.stringify(progress));
     fs.renameSync(progressFile() + '.tmp', progressFile());
   }
-  async function send(bytes, explicitName) {
+  async function send(bytes, explicitName, context) {
     const config = settings(), printers = await list();
-    const explicitKitchen = explicitName && config.kitchen && explicitName === config.kitchen.printerName && explicitName !== config.printerName;
-    const targets = [{ ...(explicitKitchen ? config.kitchen : config), printerName: explicitName || config.printerName, label: explicitKitchen ? 'Cozinha' : 'Caixa' }];
-    if (!explicitName && config.kitchen) targets.push({ ...config.kitchen, label: 'Cozinha' });
+    const targetMode = context && context.target || 'all';
+    let targets;
+    if (targetMode === 'kitchen') {
+      if (!config.kitchen) throw new Error('Configure a segunda impressora da cozinha no aplicativo MyDelivery.');
+      if (config.kitchen.printerName === config.printerName) throw new Error('A impressora da cozinha precisa ser diferente da impressora do caixa.');
+      targets = [{ ...config.kitchen, label: 'Cozinha' }];
+    } else {
+      const explicitKitchen = explicitName && config.kitchen && explicitName === config.kitchen.printerName && explicitName !== config.printerName;
+      targets = [{ ...(explicitKitchen ? config.kitchen : config), printerName: explicitName || config.printerName, label: explicitKitchen ? 'Cozinha' : 'Caixa' }];
+      if (!explicitName && config.kitchen) targets.push({ ...config.kitchen, label: 'Cozinha' });
+      if(!explicitName)config.extras.forEach((extra,index)=>targets.push({...extra,label:'Impressora '+(index+3)}));
+      if(explicitName){const extra=config.extras.find(x=>x.printerName===explicitName);if(extra)targets[0]={...extra,label:'Impressora adicional'};}
+    }
     // Resolve all destinations before sending any copy. Never substitute a
     // missing configured printer with the system default.
     const resolved = targets.map(target => ({ ...target, printer: selectPrinter(printers, target.printerName) }));
     const unique = resolved.filter((target, i) => resolved.findIndex(t => t.printer.name === target.printer.name) === i);
-    if (unique.length === 1) return sendOne(bytes, unique[0], unique[0].printer);
+    if (unique.length === 1) return sendOne(bytes, unique[0], unique[0].printer, context);
     // Rendering timestamps change on automatic retries. Normalize only exact
     // generated timestamp/ETA spans, leaving all order and fiscal content intact.
     const stable = receiptDocument(bytes).replace(/>(\d{2}\/\d{2}\/\d{4}),? \d{2}:\d{2}(?::\d{2})?<\/span>/g, '>$1 TIMESTAMP</span>')
       .replace(/>Entrega prevista: \d{2}:\d{2} - \d{2}:\d{2}<\/span>/g, '>ETA</span>');
-    const key = createHash('sha256').update(stable).update(JSON.stringify(unique.map(t => t.printer.name).sort())).digest('hex');
+    const key = createHash('sha256').update(stable)
+      .update(context && context.restaurantSlug === 'talentos-pizzas' && context.forceKitchenCompact !== true ? 'talentos-pizzas:full-kitchen' : '')
+      .update(targetMode).update(JSON.stringify(unique.map(t => t.printer.name).sort())).digest('hex');
     const now = Date.now(), progress = readProgress();
     for (const [id, entry] of Object.entries(progress)) if (!entry || now - entry.at > 7 * 86400000) delete progress[id];
     const entry = progress[key] || { at: now, sent: [] };
@@ -105,7 +127,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     const failures = [];
     for (const target of unique) {
       if (entry.sent.includes(target.printer.name)) continue;
-      try { await sendOne(bytes, target, target.printer); }
+      try { await sendOne(bytes, target, target.printer, context); }
       catch (error) { failures.push(target.label + ' (' + target.printer.name + '): ' + error.message); continue; }
       entry.sent.push(target.printer.name); entry.at = Date.now(); progress[key] = entry;
       // Persist each accepted destination before sending the next one.
@@ -117,10 +139,10 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     delete progress[key]; writeProgress(progress);
     return { ok: true, printerName: unique.map(t => t.printer.name).join(' e '), printers: unique.map(t => t.printer.name), via: 'multiple' };
   }
-  function print(bytes, name) {
+  function print(bytes, name, context) {
     // Do not retry through another printer: a driver error may occur after the
     // spooler accepted a job. The caller retains its existing retry/dedup logic.
-    const job = queue.then(() => send(bytes, name));
+    const job = queue.then(() => send(bytes, name, context));
     queue = job.catch(() => {});
     return job;
   }

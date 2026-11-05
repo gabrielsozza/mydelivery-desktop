@@ -1,0 +1,24 @@
+name: Verify published Windows installer
+on:
+  push:
+    branches: ['fix/windows-installer-validation']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installed-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify published installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.0.33 --pattern MyDelivery-Setup.exe --dir release -R gabrielsozza/mydelivery-desktop
+          $actual=(Get-FileHash release/MyDelivery-Setup.exe -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne '5bd5d69bb25d91ff94851a2176b9c134ea2d876ef64c6fce80cd3ece36b6bad6') { throw 'Installer does not match release checksum' }
+      - name: Test installed executable and repair on Windows
+        shell: pwsh
+        run: ./test/windows-installed-smoke.ps1 -Installer release/MyDelivery-Setup.exe -TestRepair

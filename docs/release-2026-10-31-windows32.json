@@ -1,0 +1,20 @@
+{
+  "version": "1.0.39",
+  "sourceCommit": "93e5ef08e4f474b5a08b80eeb7542816cdea5982",
+  "architectures": [
+    "ia32",
+    "x64"
+  ],
+  "minimumWindows": "10",
+  "size": 152574482,
+  "sha256": "f96efbd06f6a4395fc2f1bb2b03537d20ee65743de0fa12b97dd8aefab7b899c",
+  "download": "https://github.com/gabrielsozza/mydelivery-desktop/releases/download/v1.0.39/MyDelivery-Setup.exe?download=1",
+  "validationRun": "https://github.com/gabrielsozza/mydelivery-desktop/actions/runs/41264992687",
+  "validation": "58 unit tests, x86 binary/DLL validation and application launch on Windows x64/WOW64, dual payload installer, x64 install/upgrade/reopen/repair with printer preference preservation",
+  "limitations": [
+    "Not tested on physical 32-bit Windows host",
+    "Windows 7/8/8.1 unsupported"
+  ],
+  "netlifyDeploy": "6ae6a4251c391f56d9fe08b7",
+  "automaticLatest": false
+}

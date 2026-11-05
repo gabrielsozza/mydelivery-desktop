@@ -1,0 +1,16 @@
+{
+  "version": "1.0.33",
+  "commit": "bc6dd6e5ddf7aa451b0ea761fe1906f65060b048",
+  "workflow_run": 39864702997,
+  "status": "published",
+  "scope": "Only restaurantSlug talentos-pizzas receives complete cashier content on kitchen printer; other stores retain preparation-only kitchen receipts",
+  "root_cause": "Existing local exception had not been published; public v1.0.32 always filtered kitchen receipt and dropped restaurant context in preload",
+  "tests": {
+    "passed": 46,
+    "windows_ci": "success",
+    "physical_printer_verified": false
+  },
+  "release_checkout": "/tmp/mydelivery-talentos-release-1033",
+  "required_client_action": "Apply desktop 1.0.33 update and restart app",
+  "workflow_conclusion": "success"
+}

@@ -1,0 +1,29 @@
+{
+  "version": "1.0.40",
+  "edition": "Windows 7 SP1 compatibility",
+  "electron": "22.3.27",
+  "architectures": [
+    "ia32",
+    "x64"
+  ],
+  "sourceCommit": "aa1f64b",
+  "release": "https://github.com/gabrielsozza/mydelivery-desktop/releases/tag/win7-v1.0.40",
+  "download": "https://github.com/gabrielsozza/mydelivery-desktop/releases/download/win7-v1.0.40/MyDelivery-Windows7-Setup.exe?download=1",
+  "sha256": "e2002b04ed2b495c60fa3773bc2a7bbf244b55ab0b065cf61cf56032eb03513f",
+  "bytes": 134661953,
+  "validationRun": "https://github.com/gabrielsozza/mydelivery-desktop/actions/runs/41316901517",
+  "validationHost": "Windows Server 2022 (x86 on WOW64); macOS local Electron 22 rendering",
+  "physicalWindows7Validated": false,
+  "unitTestsPassed": 60,
+  "nativeUpdatePolicy": "No automatic native updates or modern release-feed requests. Manual download uses Windows 7 section.",
+  "netlifyDeploy": "6ae74f270bc9244b89234f90",
+  "websitePathsChanged": [
+    "/index.html",
+    "/js/impressora-esc-pos.js"
+  ],
+  "modernLatestUnchanged": "v1.0.37",
+  "limitations": [
+    "Electron 22 security support has ended",
+    "Physical Windows 7 SP1 notebook and physical printer still require validation"
+  ]
+}

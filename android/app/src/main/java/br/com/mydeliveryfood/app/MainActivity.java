@@ -23,6 +23,8 @@ import android.webkit.WebResourceResponse;
 import android.view.KeyEvent;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
+import android.content.ActivityNotFoundException;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -38,6 +40,8 @@ public class MainActivity extends Activity {
 
     private static final String APP_URL = PageLoadRecovery.LOGIN_URL;
     private WebView web;
+    private static final int FILE_CHOOSER_REQUEST = 4101;
+    private ValueCallback<Uri[]> pendingFiles;
     private LinearLayout connectionPanel;
     private TextView connectionMessage;
     private boolean loadFailed, paused;
@@ -132,11 +136,48 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        web.setWebChromeClient(new WebChromeClient());
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
+                                             FileChooserParams params) {
+                finishFileChooser(null);
+                pendingFiles = callback;
+                try {
+                    // System picker grants access only to the files the user selects.
+                    // No storage permission or access to the rest of the gallery is needed.
+                    Intent picker = params.createIntent();
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,
+                            params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
+                    startActivityForResult(picker, FILE_CHOOSER_REQUEST);
+                } catch (ActivityNotFoundException | SecurityException error) {
+                    finishFileChooser(null);
+                    Toast.makeText(MainActivity.this,
+                            "Não foi possível abrir os arquivos. Confira o aplicativo Arquivos do aparelho.",
+                            Toast.LENGTH_LONG).show();
+                }
+                return true;
+            }
+        });
 
         if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) {
             web.loadUrl(APP_URL);
         }
+    }
+
+    private void finishFileChooser(Uri[] files) {
+        ValueCallback<Uri[]> callback = pendingFiles;
+        pendingFiles = null;
+        if (callback != null) callback.onReceiveValue(files);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == FILE_CHOOSER_REQUEST) {
+            finishFileChooser(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override
@@ -239,6 +280,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         cancelRetry();
+        finishFileChooser(null);
         web.destroy();
         super.onDestroy();
     }
