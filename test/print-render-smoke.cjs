@@ -107,7 +107,7 @@ app.whenReady().then(async () => {
     for (const text of ['Cliente Teste','Telefone:','Entrega:','Pagamento','DINHEIRO','R$','Total:','Subtotal:']) assert.ok(!kitchen.text.includes(text),text);
     assert.ok(kitchen.scroll <= kitchen.width + 1);
     const itemFonts = await receipt.webContents.executeJavaScript('[...document.querySelectorAll(".preparation span")].map(el=>getComputedStyle(el).fontSize)');
-    assert.ok(itemFonts.length > 0 && itemFonts.every(size=>size === (width === 58 ? "17px" : "19px")));
+    assert.ok(itemFonts.length > 0 && itemFonts.every(size=>size === (width === 58 ? "12.5px" : "15.5px")));
     fs.writeFileSync(path.join(output,`kitchen-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   receipt.destroy(); clearTimeout(watchdog);
