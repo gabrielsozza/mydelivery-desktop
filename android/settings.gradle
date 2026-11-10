@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 rootProject.name = "MyDelivery"
 include ':app'
 include ':driver'
+include ':waiter'
