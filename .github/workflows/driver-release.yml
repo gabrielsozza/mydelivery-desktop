@@ -44,3 +44,4 @@ jobs:
           fail_on_unmatched_files: true
           draft: false
           prerelease: false
+          make_latest: false
