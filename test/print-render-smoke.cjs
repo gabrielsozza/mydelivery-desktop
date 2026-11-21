@@ -67,7 +67,7 @@ app.whenReady().then(async () => {
   assert.equal(full.address,'15px');
   assert.equal(await receipt.webContents.executeJavaScript(`getComputedStyle(document.querySelector('.address')).fontFamily`), await receipt.webContents.executeJavaScript(`getComputedStyle(document.body).fontFamily`));
   assert.equal(full.headings.length,5);
-  assert.deepEqual(full.headings,['20px','23px','20px','20px','20px']);
+  assert.deepEqual(full.headings,['18px','21px','18px','18px','18px']);
   fs.writeFileSync(path.join(output,'complete-80mm.png'),(await receipt.webContents.capturePage()).toPNG());
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(complete,58)));
   const compact = await receipt.webContents.executeJavaScript(`({width:document.body.clientWidth,scroll:document.body.scrollWidth,size:getComputedStyle(document.querySelector('.address span')).fontSize})`);
@@ -107,7 +107,7 @@ app.whenReady().then(async () => {
     for (const text of ['Cliente Teste','Telefone:','Entrega:','Pagamento','DINHEIRO','R$','Total:','Subtotal:']) assert.ok(!kitchen.text.includes(text),text);
     assert.ok(kitchen.scroll <= kitchen.width + 1);
     const itemFonts = await receipt.webContents.executeJavaScript('[...document.querySelectorAll(".preparation span")].map(el=>getComputedStyle(el).fontSize)');
-    assert.ok(itemFonts.length > 0 && itemFonts.every(size=>width === 58 ? size === '12.5px' : ['15px','18px'].includes(size)));
+    assert.ok(itemFonts.length > 0 && itemFonts.every(size=>width === 58 ? size === '12.5px' : ['15px','16px'].includes(size)));
     fs.writeFileSync(path.join(output,`kitchen-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   receipt.destroy(); clearTimeout(watchdog);

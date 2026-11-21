@@ -28,7 +28,7 @@ function setup(t, behavior) {
 test('receipt preserves amounts and formatting and escapes HTML', () => {
   const html = receiptDocument(Buffer.concat([sample, Buffer.from('<script>alert(1)</script>\n')]));
   assert.match(html.replace(/<[^>]*>/g,''), /TOTAL: R\$ 80,00/);
-  assert.match(html, /font-size:23px/); assert.match(html, /font-size:15px/);
+  assert.match(html, /font-size:21px/); assert.match(html, /font-size:15px/);
   assert.match(html, /font-weight:700/); assert.match(html, /font-weight:900/);
   assert.match(html, /&lt;script&gt;/); assert.doesNotMatch(html, /<script>/);
 });
@@ -77,7 +77,7 @@ test('automatic receipts for delivery, table and counter keep the readable layou
     assert.ok(html.includes(label));
     assert.ok(html.includes('Acai 1L'));
     assert.match(html,/font-family:Arial/);
-    assert.match(html,/font-size:18(?:\.00)?px/);
+    assert.match(html,/font-size:16(?:\.00)?px/);
     assert.match(html,/Total:/);
   }
 });
@@ -318,7 +318,7 @@ test('80 mm headings grow vertically and reset before body text; 58 mm retains n
   assert.equal(wide.toString('ascii').split('\x1b!\x18').length - 1,3);
   assert.match(wide.toString('ascii'), /\x1b!\x08(?:\x1b[EG][\s\S])*Nome: Cliente Teste/);
   assert.ok(!narrow.includes(Buffer.from([27,33,24])));
-  assert.match(receiptDocument(bytes,80), /class="line heading"[^>]*><span style="font-weight:900;font-size:20px/);
+  assert.match(receiptDocument(bytes,80), /class="line heading"[^>]*><span style="font-weight:900;font-size:18px/);
   assert.doesNotMatch(receiptDocument(bytes,58), /class="line heading"/);
 });
 
@@ -355,7 +355,7 @@ test('JR photo: long preparation items wrap in readable type instead of shrinkin
     assert.ok(html.includes(name),'currency inside a product name remains part of its name');
     assert.doesNotMatch(html,/class="line amount-row preparation"/);
     for(const row of rows){
-      const font=width===58?12.5:row.includes(name)?18:15;
+      const font=width===58?12.5:row.includes(name)?16:15;
       for(const size of row.matchAll(/font-size:([\d.]+)px/g)) assert.equal(Number(size[1]),font);
     }
     assert.match(html,/\.preparation\{white-space:normal;overflow-wrap:break-word/);

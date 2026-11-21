@@ -200,14 +200,14 @@ function receiptDocument(input, width = 80) {
     // The browser wraps long text instead of shrinking it to unreadable type.
     const scale = width === 80 || preparationRow || address || customer || heading || item ? 1 : Math.min(1, usablePx / Math.max(1, units * 7.6));
     if (address) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + baseFont + 'px');
-    if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (/^Pedido\s+#?\d+$/i.test(plain.trim()) && width === 80 ? 23 : 20) + 'px').replace(/font-weight:\d+/g,'font-weight:900');
-    if (preparationRow) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (width === 58 ? 12.5 : mainItem ? 18 : 15) + 'px');
+    if (heading) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (/^Pedido\s+#?\d+$/i.test(plain.trim()) && width === 80 ? 21 : 18) + 'px').replace(/font-weight:\d+/g,'font-weight:900');
+    if (preparationRow) line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (width === 58 ? 12.5 : mainItem ? 16 : 15) + 'px');
     // Keep short names and amounts on one line. If that would require tiny
     // type, let the name use the full row and put the intact amount below it.
     let stacked = false;
     if (item) {
       const available = usablePx - (width === 58 ? 1 : 2) * 96 / 25.4 - 4;
-      const desired = preparationRow ? (width === 58 ? 12.5 : mainItem ? 18 : 15) : baseFont;
+      const desired = preparationRow ? (width === 58 ? 12.5 : mainItem ? 16 : 15) : baseFont;
       const fit = Math.min(desired, available / (units * (width === 58 ? 0.61 : 0.55)));
       stacked = fit < (width === 58 ? 11.5 : 13.5);
       line = line.replace(/font-size:[\d.]+px/g, 'font-size:' + (stacked ? desired : fit).toFixed(2) + 'px');
