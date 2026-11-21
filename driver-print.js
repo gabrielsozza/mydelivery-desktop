@@ -102,6 +102,10 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       if (!config.kitchen) throw new Error('Configure a segunda impressora da cozinha no aplicativo MyDelivery.');
       if (config.kitchen.printerName === config.printerName) throw new Error('A impressora da cozinha precisa ser diferente da impressora do caixa.');
       targets = [{ ...config.kitchen, label: 'Cozinha' }];
+    } else if (targetMode === 'cashier') {
+      // Financial reports belong only at the cashier, even when kitchen and
+      // additional printers are configured for normal order receipts.
+      targets = [{ ...config, label: 'Caixa' }];
     } else {
       const explicitKitchen = explicitName && config.kitchen && explicitName === config.kitchen.printerName && explicitName !== config.printerName;
       targets = [{ ...(explicitKitchen ? config.kitchen : config), printerName: explicitName || config.printerName, label: explicitKitchen ? 'Cozinha' : 'Caixa' }];

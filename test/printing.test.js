@@ -220,6 +220,19 @@ test('cashier and kitchen each receive one copy with independent paper settings'
   assert.deepEqual(f.jobs.map(j=>j.deviceName),['EPSON TM-T20','OneNote (Desktop)']);
   assert.match(f.windows[0].html,/data-paper-width="80"/); assert.match(f.windows[1].html,/data-paper-width="58"/);
 });
+for (const mode of ['driver','raw']) test('cash closing reaches only the cashier with '+mode, async t => {
+  const f=setup(t);
+  f.setPrinters([{name:'Caixa'},{name:'Cozinha'},{name:'Bar'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode,kitchen:{printerName:'Cozinha',width:80,mode},extras:[{printerName:'Bar',width:80,mode,receipt:'kitchen'}]});
+  const receipt=Buffer.from('\x1b@FECHAMENTO DE CAIXA\nTotal de vendas R$ 100,00\n');
+  await f.service.print(receipt,null,{target:'cashier'});
+  assert.deepEqual(mode==='raw'?f.raw.map(job=>job[1]):f.jobs.map(job=>job.deviceName),['Caixa']);
+  const printed=mode==='raw'?f.raw[0][0].toString('ascii'):f.windows[0].html;
+  assert.match(printed,/FECHAMENTO DE CAIXA/);
+  assert.match(printed,/R\$ 100,00/);
+  await f.service.print(kitchenOrder());
+  assert.deepEqual(mode==='raw'?f.raw.map(job=>job[1]):f.jobs.map(job=>job.deviceName),['Caixa','Caixa','Cozinha','Bar']);
+});
 test('same printer in cashier and kitchen receives only one copy', async t => {
   const f = setup(t);
   await f.service.save({printerName:'EPSON TM-T20',width:80,mode:'driver',kitchen:{printerName:'EPSON TM-T20',width:58,mode:'driver'}});

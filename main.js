@@ -199,7 +199,7 @@ ipcMain.handle('md:imprimir', async (event, payload) => {
     const restaurantSlug = payload && payload.restaurantSlug;
     if (restaurantSlug != null && (typeof restaurantSlug !== 'string' || restaurantSlug.length > 200)) throw new Error('Loja inválida.');
     const target = payload && payload.target || 'all';
-    if (!['all', 'kitchen'].includes(target)) throw new Error('Destino de impressão inválido.');
+    if (!['all', 'kitchen', 'cashier'].includes(target)) throw new Error('Destino de impressão inválido.');
     const forceKitchenCompact = payload && payload.forceKitchenCompact === true;
     return await printing.print(bytes, printerName, { restaurantSlug, target, forceKitchenCompact });
   } catch (e) {
