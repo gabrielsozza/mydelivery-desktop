@@ -26,9 +26,10 @@ Localmente dá pra gerar só o do Mac: `npm run dist:mac`.
 ## Como a impressão funciona
 
 `preload.js` expõe `window.myDeliveryDesktop.imprimir(bytes)`. O painel mantém
-o formato de cupom existente. A partir da versão 1.0.19, no Windows o app
-converte texto, formatação e QR fiscal para um documento e imprime pelo driver
-instalado, inclusive OneNote. Mac/Linux conservam o envio RAW como padrão.
+o conteúdo do cupom existente. No modo automático, o app converte texto,
+formatação e QR fiscal para um documento legível e imprime pelo driver
+instalado, como no navegador. A impressão térmica direta ESC/POS continua
+disponível como opção explícita para equipamentos que precisem dela.
 
 Use **Configurações → Impressão automática → Escolher impressora**, ou o menu
 **MyDelivery → Configurar impressora**. A seleção e largura ficam salvas neste

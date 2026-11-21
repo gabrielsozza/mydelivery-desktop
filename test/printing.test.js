@@ -28,7 +28,7 @@ function setup(t, behavior) {
 test('receipt preserves amounts and formatting and escapes HTML', () => {
   const html = receiptDocument(Buffer.concat([sample, Buffer.from('<script>alert(1)</script>\n')]));
   assert.match(html.replace(/<[^>]*>/g,''), /TOTAL: R\$ 80,00/);
-  assert.match(html, /font-size:20px/); assert.match(html, /font-size:14px/);
+  assert.match(html, /font-size:23px/); assert.match(html, /font-size:15px/);
   assert.match(html, /font-weight:700/); assert.match(html, /font-weight:900/);
   assert.match(html, /&lt;script&gt;/); assert.doesNotMatch(html, /<script>/);
 });
@@ -48,19 +48,38 @@ test('OneNote always uses the installed driver, even with legacy raw preference'
   assert.equal(f.raw.length, 0); assert.equal(f.windows[0].destroyed, true);
   assert.equal(f.windows[0].options.webPreferences.javascript, false);
 });
-test('unconfigured thermal printer keeps direct transport after an app update', async t => {
+test('unconfigured thermal printer uses the readable document layout', async t => {
   const f = setup(t);
   f.setPrinters([{name:'MTP-II Bluetooth',isDefault:true}]);
   const result = await f.service.print(sample);
   assert.equal(f.service.settings().mode,'auto');
-  assert.equal(result.via,'raw'); assert.equal(f.raw.length,1); assert.equal(f.jobs.length,0);
+  assert.equal(result.via,'driver'); assert.equal(f.raw.length,0); assert.equal(f.jobs.length,1);
+  assert.match(f.windows[0].html, /font-family:Arial/);
 });
 test('automatic mode persists and preserves each physical/virtual destination', async t => {
   const f = setup(t);
   await f.service.save({printerName:'EPSON TM-T20',width:58,mode:'auto',kitchen:{printerName:'OneNote (Desktop)',width:80,mode:'auto'}});
   await createPrintingService(f.options).print(sample);
-  assert.equal(f.raw.length,1); assert.equal(f.raw[0][1],'EPSON TM-T20');
-  assert.equal(f.jobs.length,1); assert.equal(f.jobs[0].deviceName,'OneNote (Desktop)');
+  assert.equal(f.raw.length,0);
+  assert.deepEqual(f.jobs.map(job=>job.deviceName),['EPSON TM-T20','OneNote (Desktop)']);
+});
+test('automatic receipts for delivery, table and counter keep the readable layout', async t => {
+  const f = setup(t);
+  await f.service.save({printerName:'EPSON TM-T20',width:80,mode:'auto'});
+  for (const label of ['DELIVERY','MESA 8','PEDIDO BALCAO']) {
+    const receipt = Buffer.from('\x1b@\x1ba\x01' + label + '\nPedido 12345\n\x1ba\0Itens\n(1) Acai 1L       R$ 36,00\n  + Leite em po\nTotal: R$ 36,00\n');
+    await f.service.print(receipt);
+  }
+  assert.equal(f.raw.length,0);
+  assert.equal(f.jobs.length,3);
+  for (const [index,label] of ['DELIVERY','MESA 8','PEDIDO BALCAO'].entries()) {
+    const html = f.windows[index].html;
+    assert.ok(html.includes(label));
+    assert.ok(html.includes('Acai 1L'));
+    assert.match(html,/font-family:Arial/);
+    assert.match(html,/font-size:18(?:\.00)?px/);
+    assert.match(html,/Total:/);
+  }
 });
 test('strong thermal text preserves complete fiscal image data and does not double character width', () => {
   const raster=Buffer.from([29,118,48,0,1,0,6,0,27,69,0,27,33,0]);
@@ -277,7 +296,7 @@ test('addresses use legible 80 mm and compact 58 mm sizes without enlarging pick
   const bytes = Buffer.from('\x1b@' + text + '\nTotal: R$ 50,00\n');
   const wide = receiptDocument(bytes,80), narrow = receiptDocument(bytes,58);
   assert.match(wide, /class="line address"/);
-  assert.match(wide, /font-size:14px[^>]*>Entrega:/);
+  assert.match(wide, /font-size:15px[^>]*>Entrega:/);
   assert.ok(wide.includes(text));
   assert.match(narrow, /font-size:12.5px[^>]*>Entrega:/);
   assert.doesNotMatch(receiptDocument(Buffer.from('Entrega: Retirada no local\n'),80), /class="line address"/);
@@ -330,12 +349,15 @@ test('JR photo: long preparation items wrap in readable type instead of shrinkin
   const name='(1) Smash Salada + R$ 18,99 Leve Outro Item';
   const bytes=Buffer.from('Itens\n'+name+'\n  + Sem cebola, com molho separado\n-------------------------------\nPagamento\n');
   for(const width of [58,80]){
-    const html=receiptDocument(bytes,width),font=width===58?12.5:15.5;
+    const html=receiptDocument(bytes,width);
     const rows=[...html.matchAll(/<div class="line[^\"]* preparation"[^>]*>(.*?)<\/div>/g)].map(m=>m[1]);
     assert.ok(rows.length>=2);
     assert.ok(html.includes(name),'currency inside a product name remains part of its name');
     assert.doesNotMatch(html,/class="line amount-row preparation"/);
-    for(const row of rows) for(const size of row.matchAll(/font-size:([\d.]+)px/g)) assert.equal(Number(size[1]),font);
+    for(const row of rows){
+      const font=width===58?12.5:row.includes(name)?18:15;
+      for(const size of row.matchAll(/font-size:([\d.]+)px/g)) assert.equal(Number(size[1]),font);
+    }
     assert.match(html,/\.preparation\{white-space:normal;overflow-wrap:break-word/);
     const raw=thermalReceipt(Buffer.from(name+'\n'),width);
     const lines=visibleRows(raw);assert.equal(lines.join(' '),name);assert.ok(lines.every(r=>r.length<=(width===58?30:44)));

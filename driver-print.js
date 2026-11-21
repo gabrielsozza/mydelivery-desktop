@@ -57,8 +57,10 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     const fullKitchen = context && context.restaurantSlug === 'talentos-pizzas'
       && context.forceKitchenCompact !== true;
     if ((config.label === 'Cozinha'||config.receipt==='kitchen') && !fullKitchen) bytes = kitchenReceipt(bytes);
-    // Preserve pre-1.0.19 thermal transport unless the owner explicitly chose a driver.
-    if ((config.mode === 'raw' || config.mode === 'auto') && !isVirtual(printer.name)) {
+    // The automatic path uses the same large, readable document layout as the
+    // browser. Native ESC/POS remains an explicit choice for devices whose
+    // driver cannot print a receipt document.
+    if (config.mode === 'raw' && !isVirtual(printer.name)) {
       await rawPrint(thermalReceipt(bytes, config.width), printer.name);
       return { ok: true, printerName: printer.name, via: 'raw' };
     }

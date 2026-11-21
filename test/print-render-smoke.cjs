@@ -57,17 +57,17 @@ app.whenReady().then(async () => {
     await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(addressBytes,width)));
     const bounds = await receipt.webContents.executeJavaScript(`({body:document.body.clientWidth,scroll:document.body.scrollWidth,size:getComputedStyle(document.querySelector('.line span')).fontSize,height:document.querySelector('.line').clientHeight})`);
     assert.ok(bounds.scroll <= bounds.body + 1);
-    assert.equal(bounds.size,width === 80 ? '14px' : '12.5px'); assert.ok(bounds.height > 30);
+    assert.equal(bounds.size,width === 80 ? '15px' : '12.5px'); assert.ok(bounds.height > 30);
     fs.writeFileSync(path.join(output,`address-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   const complete = Buffer.from('\x1b@\x1ba\x01PARA ENTREGA\n17/10/2026, 15:00:00\nLoja de Teste\n================================\nPedido 12345\n--------------------------------\n\x1ba\0Cliente\nNome: Cliente Teste\nTelefone: (11) 90000-0000\n' + addressText + '\n--------------------------------\nItens\n(1) Pizza Tradicional Pequena\n                       R$ 30,00\n  + Frango com Catupiry\n(1) Refrigerante 1 L     R$ 10,00\n  + Coca-Cola Original\n--------------------------------\nPagamento\nForma de Pagamento: DINHEIRO\n--------------------------------\nSubtotal:               R$ 40,00\nTaxa de entrega:        R$ 10,00\nTotal:                  R$ 50,00\n--------------------------------\n\x1ba\x01Powered By: MyDelivery\n');
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(complete,80)));
   const full = await receipt.webContents.executeJavaScript(`({width:document.body.clientWidth,scroll:document.body.scrollWidth,headings:[...document.querySelectorAll('.heading span')].map(e=>getComputedStyle(e).fontSize),address:getComputedStyle(document.querySelector('.address span')).fontSize})`);
   assert.ok(full.scroll <= full.width + 1);
-  assert.equal(full.address,'14px');
+  assert.equal(full.address,'15px');
   assert.equal(await receipt.webContents.executeJavaScript(`getComputedStyle(document.querySelector('.address')).fontFamily`), await receipt.webContents.executeJavaScript(`getComputedStyle(document.body).fontFamily`));
   assert.equal(full.headings.length,5);
-  assert.ok(full.headings.every(size=>size==='20px'));
+  assert.deepEqual(full.headings,['20px','23px','20px','20px','20px']);
   fs.writeFileSync(path.join(output,'complete-80mm.png'),(await receipt.webContents.capturePage()).toPNG());
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(complete,58)));
   const compact = await receipt.webContents.executeJavaScript(`({width:document.body.clientWidth,scroll:document.body.scrollWidth,size:getComputedStyle(document.querySelector('.address span')).fontSize})`);
@@ -107,7 +107,7 @@ app.whenReady().then(async () => {
     for (const text of ['Cliente Teste','Telefone:','Entrega:','Pagamento','DINHEIRO','R$','Total:','Subtotal:']) assert.ok(!kitchen.text.includes(text),text);
     assert.ok(kitchen.scroll <= kitchen.width + 1);
     const itemFonts = await receipt.webContents.executeJavaScript('[...document.querySelectorAll(".preparation span")].map(el=>getComputedStyle(el).fontSize)');
-    assert.ok(itemFonts.length > 0 && itemFonts.every(size=>size === (width === 58 ? "12.5px" : "15.5px")));
+    assert.ok(itemFonts.length > 0 && itemFonts.every(size=>width === 58 ? size === '12.5px' : ['15px','18px'].includes(size)));
     fs.writeFileSync(path.join(output,`kitchen-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
   receipt.destroy(); clearTimeout(watchdog);
