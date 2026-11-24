@@ -2,7 +2,10 @@
 const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
-const { receiptDocument, thermalReceipt, kitchenReceipt } = require('./receipt-document');
+const { orderWithoutInvoice, receiptDocument, thermalReceipt, kitchenReceipt } = require('./receipt-document');
+
+const { routeItems, validateRoutes } = require('./station-routing');
+const { fiscalDocument } = require('./fiscal-document');
 
 const isVirtual = name => /onenote|print to pdf|xps|fax/i.test(name || '');
 function selectPrinter(printers, name) {
@@ -19,6 +22,19 @@ function selectPrinter(printers, name) {
   return selected;
 }
 
+// Query Chromium's layout tree without enabling scripts inside receipt windows.
+async function measuredBox(contents, selector) {
+  const inspector=contents.debugger;
+  inspector.attach('1.3');
+  try {
+    const {root}=await inspector.sendCommand('DOM.getDocument');
+    const {nodeId}=await inspector.sendCommand('DOM.querySelector',{nodeId:root.nodeId,selector});
+    const {model}=await inspector.sendCommand('DOM.getBoxModel',{nodeId});
+    if (!Number.isFinite(model.height) || model.height<=0) throw Error('Não foi possível medir o cupom.');
+    return model;
+  } finally { if (inspector.isAttached()) inspector.detach(); }
+}
+
 function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   let queue = Promise.resolve();
   let pendingTest;
@@ -27,7 +43,9 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   function settings() {
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'printing.json'), 'utf8')); } catch (_) {}
-    return { printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', extras: Array.isArray(saved.extras)?saved.extras.slice(0,2).filter(x=>x&&typeof x.printerName==='string'&&x.printerName).map(x=>({printerName:x.printerName,width:x.width===58?58:80,mode:['auto','driver','raw'].includes(x.mode)?x.mode:'auto',receipt:x.receipt==='full'?'full':'kitchen'})):[], kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
+    const fiscal = saved.fiscal && typeof saved.fiscal.printerName === 'string' && saved.fiscal.printerName && Number.isFinite(saved.fiscal.since)
+      ? { printerName: saved.fiscal.printerName, width: saved.fiscal.width === 58 ? 58 : 80, since: saved.fiscal.since } : null;
+    return { routes: saved.routes || {}, fiscal, printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', extras: Array.isArray(saved.extras)?saved.extras.slice(0,2).filter(x=>x&&typeof x.printerName==='string'&&x.printerName).map(x=>({printerName:x.printerName,width:x.width===58?58:80,mode:['auto','driver','raw'].includes(x.mode)?x.mode:'auto',receipt:x.receipt==='full'?'full':'kitchen'})):[], kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
   }
   async function list() { return getContents().getPrintersAsync(); }
   async function save(value) {
@@ -49,9 +67,33 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       const target=selectPrinter(await list(),extra.printerName);
       if(extra.mode==='raw'&&isVirtual(target.name))throw new Error('Escolha o driver para impressoras virtuais.');
     }
+    const routes = {...settings().routes};
+    if (value.routingUpdate) {
+      const {slug, rules} = value.routingUpdate;
+      if (!/^[a-z0-9_-]{1,200}$/i.test(slug)) throw Error('Loja inválida.');
+      if (rules) routes[slug] = rules;
+      else delete routes[slug];
+    }
+    const previous = settings().fiscal;
+    const requested = value.fiscal === undefined ? previous : value.fiscal;
+    let fiscal = null;
+    if (requested) {
+      if (typeof requested.printerName !== 'string' || !requested.printerName || ![58,80].includes(requested.width)) throw Error('Escolha a impressora e o papel da NFC-e.');
+      const selected = selectPrinter(await list(), requested.printerName);
+      if (isVirtual(selected.name)) throw Error('Escolha uma impressora física para a NFC-e automática.');
+      if (printer.name === selected.name && !Object.keys(routes).length && ![kitchen,...extras].some(t => t && t.printerName !== selected.name))
+        throw Error('Selecione outra impressora para os pedidos antes de reservar esta para NFC-e.');
+      fiscal = { printerName: selected.name, width: requested.width, since: previous ? previous.since : Date.now() };
+    }
+    const installed = await list();
+    for (const rules of Object.values(routes)) {
+      if (rules === value.routingUpdate?.rules) validateRoutes(rules, installed, fiscal);
+      else if (fiscal && [rules.fallback,...Object.values(rules.categories),...Object.values(rules.products),...Object.values(rules.external)].includes(fiscal.printerName))
+        throw Error('A impressora fiscal também está selecionada em uma distribuição por setor.');
+    }
     const file = path.join(app.getPath('userData'), 'printing.json');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file + '.tmp', JSON.stringify({ printerName: value.printerName, width: value.width, mode: value.mode, kitchen, extras }));
+    fs.writeFileSync(file + '.tmp', JSON.stringify({ printerName: value.printerName, width: value.width, mode: value.mode, kitchen, extras, fiscal, routes }));
     fs.renameSync(file + '.tmp', file);
     return settings();
   }
@@ -80,6 +122,11 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     try {
       try { await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)); }
       catch (_) { throw new Error('Não foi possível preparar o cupom para impressão.'); }
+      if (!testReceipt) {
+        const height = (await measuredBox(printWindow.webContents,'body')).height;
+        if (!Number.isFinite(height) || height <= 0) throw Error('Não foi possível medir o cupom.');
+        testOptions.pageSize = {width:config.width*1000,height:Math.max(40000,Math.min(500000,Math.ceil(height*25400/96)+6500))};
+      }
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('O driver não confirmou o envio. Confira a fila da impressora antes de tentar novamente.')), 45000);
         try {
@@ -106,9 +153,28 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   }
   async function send(bytes, explicitName, context) {
     const config = settings(), printers = await list();
+    const rules = Object.hasOwn(config.routes,context?.restaurantSlug) && config.routes[context.restaurantSlug];
+    if (rules && (context?.report || context?.target === 'cashier')) {
+      const mainName=selectPrinter(printers,config.printerName).name;
+      const stations=[rules.fallback,...Object.values(rules.categories),...Object.values(rules.products),...Object.values(rules.external)];
+      if (mainName===config.fiscal?.printerName || stations.includes(mainName))
+        throw Error('A impressora principal está reservada. Escolha uma impressora de relatórios no campo principal para imprimir o fechamento.');
+      context={...context,target:'cashier'};
+    }
+    const routed = rules && !context?.testReceipt && context?.target !== 'cashier' && !context?.report
+      ? routeItems(bytes, context?.itemSpans, rules) : null;
+    if (!routed && config.fiscal && !context?.testReceipt) bytes = orderWithoutInvoice(bytes);
     const targetMode = context && context.target || 'all';
     let targets;
-    if (targetMode === 'kitchen') {
+    if (routed) {
+      const configs = [config, config.kitchen, ...config.extras].filter(Boolean);
+      targets = Array.from(routed, ([printerName, ticket]) => {
+        const device = configs.find(c => c.printerName === printerName);
+        return {printerName, width:device?.width || 80, mode:device?.mode || 'auto',
+          label:printerName, receipt:'kitchen', ticket:orderWithoutInvoice(ticket)};
+      });
+      context={...context,forceKitchenCompact:true};
+    } else if (targetMode === 'kitchen') {
       if (!config.kitchen) throw new Error('Configure a segunda impressora da cozinha no aplicativo MyDelivery.');
       if (config.kitchen.printerName === config.printerName) throw new Error('A impressora da cozinha precisa ser diferente da impressora do caixa.');
       targets = [{ ...config.kitchen, label: 'Cozinha' }];
@@ -125,15 +191,22 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     }
     // Resolve all destinations before sending any copy. Never substitute a
     // missing configured printer with the system default.
-    const resolved = targets.map(target => ({ ...target, printer: selectPrinter(printers, target.printerName) }));
-    const unique = resolved.filter((target, i) => resolved.findIndex(t => t.printer.name === target.printer.name) === i);
-    if (unique.length === 1) return sendOne(bytes, unique[0], unique[0].printer, context);
+    if (config.fiscal && explicitName === config.fiscal.printerName && targetMode === 'all') {
+      return send(bytes, null, context);
+    }
+    const eligible = targets.filter(t => !config.fiscal || t.printerName !== config.fiscal.printerName);
+    const resolved = eligible.map(target => ({ ...target, printer: selectPrinter(printers, target.printerName) }));
+    const orderTargets = resolved.filter(target => target.printer.name !== config.fiscal?.printerName);
+    if (!orderTargets.length) throw Error('Esta impressora está reservada para NFC-e. Confira o destino dos pedidos em Configurar impressora.');
+    const unique = orderTargets.filter((target, i) => orderTargets.findIndex(t => t.printer.name === target.printer.name) === i);
+    if (unique.length === 1) return sendOne(unique[0].ticket || bytes, unique[0], unique[0].printer, context);
     // Rendering timestamps change on automatic retries. Normalize only exact
     // generated timestamp/ETA spans, leaving all order and fiscal content intact.
     const stable = receiptDocument(bytes).replace(/>(\d{2}\/\d{2}\/\d{4}),? \d{2}:\d{2}(?::\d{2})?<\/span>/g, '>$1 TIMESTAMP</span>')
       .replace(/>Entrega prevista: \d{2}:\d{2} - \d{2}:\d{2}<\/span>/g, '>ETA</span>');
     const key = createHash('sha256').update(stable)
       .update(context && context.restaurantSlug === 'talentos-pizzas' && context.forceKitchenCompact !== true ? 'talentos-pizzas:full-kitchen' : '')
+      .update(context?.restaurantSlug || '').update(String(context?.orderId || '')).update(routed ? JSON.stringify([rules.fallback,rules.categories,rules.products,rules.external]) : '')
       .update(targetMode).update(JSON.stringify(unique.map(t => t.printer.name).sort())).digest('hex');
     const now = Date.now(), progress = readProgress();
     for (const [id, entry] of Object.entries(progress)) if (!entry || now - entry.at > 7 * 86400000) delete progress[id];
@@ -143,7 +216,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     const failures = [];
     for (const target of unique) {
       if (entry.sent.includes(target.printer.name)) continue;
-      try { await sendOne(bytes, target, target.printer, context); }
+      try { await sendOne(target.ticket || bytes, target, target.printer, context); }
       catch (error) { failures.push(target.label + ' (' + target.printer.name + '): ' + error.message); continue; }
       entry.sent.push(target.printer.name); entry.at = Date.now(); progress[key] = entry;
       // Persist each accepted destination before sending the next one.
@@ -162,12 +235,49 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     queue = job.catch(() => {});
     return job;
   }
-  function test() {
+  function test(name, direct) {
+    if (name) {
+      if (!pendingTest) {
+        const job = queue.then(async () => {
+          const printer=selectPrinter(await list(),name);
+          const cfg=settings();
+          const match=[cfg.fiscal,cfg,cfg.kitchen,...cfg.extras].find(p=>p?.printerName===name);
+          return sendOne(testBytes,{width:match?.width || 80,mode:direct?'raw':'driver'},printer,{testReceipt:true});
+        });
+        queue=job.catch(()=>{});
+        pendingTest=job.finally(()=>{pendingTest=undefined;});
+      }
+      return pendingTest;
+    }
     if (!pendingTest) {
       pendingTest = print(testBytes, null, { testReceipt: true }).finally(() => { pendingTest = undefined; });
     }
     return pendingTest;
   }
-  return { settings, save, list, print, test };
+  function invoice(note, reserve) {
+    const job = queue.then(async () => {
+      const fiscal = settings().fiscal;
+      if (!fiscal) throw Error('Escolha a impressora exclusiva da NFC-e.');
+      const printer = selectPrinter(await list(), fiscal.printerName);
+      const html = fiscalDocument(note, fiscal.width);
+      const paper = new BrowserWindow({show:false, width:480, webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,javascript:false}});
+      try {
+        await paper.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+        const height = (await measuredBox(paper.webContents,'main')).height;
+        if (!Number.isFinite(height) || height <= 0) throw Error('Não foi possível medir a NFC-e.');
+        if (reserve && !(await reserve())) return {ok:true, ignorado:true};
+        await new Promise((resolve,reject) => {
+          const timer = setTimeout(() => reject(Error('O driver não confirmou a NFC-e. Confira a fila antes de reimprimir.')),45000);
+          paper.webContents.print({silent:true, deviceName:printer.name, copies:1, color:false, printBackground:true, margins:{marginType:'none'},
+            pageSize:{width:fiscal.width*1000,height:Math.min(500000,Math.max(40000,Math.ceil(height*25400/96)+3500))}},
+            (ok,reason)=>{clearTimeout(timer);if(ok)resolve();else reject(Error(reason || 'Falha ao imprimir a NFC-e.'));});
+        });
+        return {ok:true, printerName:printer.name};
+      } finally { if (!paper.isDestroyed()) paper.destroy(); }
+    });
+    queue=job.catch(()=>{});
+    return job;
+  }
+  return { settings, save, list, print, test, invoice };
 }
-module.exports = { createPrintingService, selectPrinter, isVirtual };
+module.exports = { measuredBox, createPrintingService, selectPrinter, isVirtual };

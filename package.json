@@ -1,7 +1,7 @@
 {
   "name": "mydelivery-desktop",
   "productName": "MyDelivery",
-  "version": "1.0.47",
+  "version": "1.0.48",
   "description": "MyDelivery Desktop — abre o painel MyDelivery numa janela de app com impressão automática nativa.",
   "author": "MyDelivery",
   "main": "main.js",
@@ -13,7 +13,8 @@
     "test": "node --test test/main-lifecycle.test.js test/window-recovery.test.js test/printing.test.js"
   },
   "dependencies": {
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "qrcode-generator": "1.4.4"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -33,6 +34,10 @@
       "preload.js",
       "print.js",
       "driver-print.js",
+      "fiscal-document.js",
+      "station-routing.js",
+      "station-settings.js",
+      "station-settings.css",
       "receipt-document.js",
       "print-settings.html",
       "print-settings.js",

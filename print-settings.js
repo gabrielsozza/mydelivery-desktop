@@ -58,6 +58,18 @@ async function load() {
     kitchen.value = savedKitchen ? savedKitchen.printerName : '';
     kitchenWidth.value = String(savedKitchen ? savedKitchen.width : 80); kitchenMode.value = savedKitchen ? savedKitchen.mode : 'auto';
     extras=(result.settings.extras||[]).map(x=>({...x}));renderExtras();
+    const fiscal = document.querySelector('#fiscal');
+    fiscal.replaceChildren(new Option('Desativada', ''));
+    for (const p of printers) fiscal.add(new Option(p.displayName || p.name, p.name));
+    const savedFiscal = result.settings.fiscal;
+    if (savedFiscal && !printers.some(p => p.name === savedFiscal.printerName)) fiscal.add(new Option(savedFiscal.printerName+' (não encontrada)', savedFiscal.printerName));
+    fiscal.value=savedFiscal?.printerName || '';
+    document.querySelector('#fiscal-width').value=String(savedFiscal?.width || 80);
+    document.querySelector('#fiscal-status').textContent=result.fiscalStatus || '';
+    const testDestination=document.querySelector('#test-dest');
+    testDestination.replaceChildren(...printers.map(p=>new Option(p.displayName||p.name,p.name)));
+    testDestination.value=printer.value || automaticPrinter;
+    stationEditor.load(printers,result.settings);
     printer.disabled = false; explain();
     message(printers.length ? '' : 'Nenhuma impressora encontrada. Instale o driver e clique em Atualizar lista.', !printers.length);
   } catch (error) { message(error.message, true); }
@@ -66,10 +78,10 @@ async function load() {
 async function save(test) {
   busy(true); message(test ? 'Enviando teste…' : 'Salvando…');
   try {
-    const saved = await api.configurarImpressora('save', { printerName: printer.value, width: Number(width.value), mode: mode.value, extras, kitchen: kitchen.value ? { printerName: kitchen.value, width: Number(kitchenWidth.value), mode: kitchenMode.value } : null });
+    const saved = await api.configurarImpressora('save', { routingUpdate:stationEditor.update(), printerName: printer.value, width: Number(width.value), mode: mode.value, fiscal: document.querySelector('#fiscal').value ? {printerName:document.querySelector('#fiscal').value,width:Number(document.querySelector('#fiscal-width').value)} : null, extras, kitchen: kitchen.value ? { printerName: kitchen.value, width: Number(kitchenWidth.value), mode: kitchenMode.value } : null });
     if (!saved.ok) throw new Error(saved.motivo);
     if (test) {
-      const result = await api.configurarImpressora('test');
+      const result = await api.configurarImpressora('test',{name:document.querySelector('#test-dest').value,direct:document.querySelector('#test-direct').checked});
       if (!result.ok) throw new Error(result.motivo);
       message('Teste enviado para ' + result.printerName + '. Confira o resultado no destino escolhido.');
     } else message('Configuração salva para este computador.');

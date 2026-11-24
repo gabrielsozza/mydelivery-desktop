@@ -29,6 +29,8 @@ jobs:
         run: npx electron test/electron-smoke.cjs
       - name: Testar configuracao e renderizacao de cupons
         run: npx electron test/print-render-smoke.cjs
+      - name: Validar NFC-e automática e tamanho do papel
+        run: npx electron test/fiscal-smoke.cjs
       - name: Build + publicar (Windows)
         run: npm run dist:win
         env:

@@ -10,8 +10,11 @@ app.on('window-all-closed', () => {});
 const watchdog = setTimeout(() => app.exit(1), 30000);
 let settings = { printerName: 'OneNote (Desktop)', width: 80, mode: 'driver' };
 ipcMain.handle('md:config-impressora', (_event, action, value) => {
+  if (action==='catalog') return {ok:true,catalog:{slug:'maria-massas',produtos:[
+    {id:101,nome:'Pizza',categoriaId:1,categoria:'Pizzas doces'},{id:102,nome:'Sopa',categoriaId:2,categoria:'Entradas para compartilhar'},
+    {id:103,nome:'Água',categoriaId:3,categoria:'Refrigerantes e águas'}],avulsos:['Pizza Margherita grande']}};
   if (action === 'save') settings = value;
-  return { ok:true, settings, automaticPrinter:'EPSON TM-T20', printers:[{name:'OneNote (Desktop)',isDefault:true},{name:'EPSON TM-T20'}] };
+  return { ok:true, settings, automaticPrinter:'EPSON TM-T20', printers:[{name:'OneNote (Desktop)',isDefault:true},{name:'EPSON TM-T20'},...['PIZZARIA','COZINHA','CAIXA','BAR'].map(name=>({name}))] };
 });
 app.whenReady().then(async () => {
   const ui = new BrowserWindow({show:false,width:660,height:820,webPreferences:{preload:path.join(__dirname,'../preload.js'),sandbox:true,contextIsolation:true,nodeIntegration:false}});
@@ -30,6 +33,11 @@ app.whenReady().then(async () => {
   assert.equal(settings.kitchen.width,58);
   assert.match(await ui.webContents.executeJavaScript('document.querySelector("#status").textContent'), /salva/);
   fs.writeFileSync(path.join(output,'printer-settings.png'), (await ui.webContents.capturePage()).toPNG());
+  await ui.webContents.executeJavaScript('document.querySelector("#station-on").click(); document.querySelector("#station-preset").click(); document.querySelector("#save").click()');
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.deepEqual(settings.routingUpdate.rules.categories,{'1':'PIZZARIA','2':'COZINHA','3':'BAR'});
+  assert.equal(settings.fiscal.printerName,'CAIXA');
+  assert.equal(settings.routingUpdate.rules.external['pizza margherita grande'],'PIZZARIA');
   ui.destroy();
   const receipt = new BrowserWindow({show:false,width:420,height:1200,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,javascript:true}});
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(require('./fixtures/receipt.json'))));

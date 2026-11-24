@@ -201,7 +201,7 @@ ipcMain.handle('md:imprimir', async (event, payload) => {
     const target = payload && payload.target || 'all';
     if (!['all', 'kitchen', 'cashier'].includes(target)) throw new Error('Destino de impressão inválido.');
     const forceKitchenCompact = payload && payload.forceKitchenCompact === true;
-    return await printing.print(bytes, printerName, { restaurantSlug, target, forceKitchenCompact });
+    return await printing.print(bytes, printerName, { restaurantSlug, target, forceKitchenCompact, itemSpans:payload.itemSpans,orderId:payload.orderId,report:payload.report===true });
   } catch (e) {
     return { ok: false, motivo: e && e.message ? e.message : String(e) };
   }
@@ -213,6 +213,56 @@ ipcMain.handle('md:listar-impressoras', async event => {
   catch (e) { return []; }
 });
 
+let fiscalStatus = '';
+function fiscalSender(event) {
+  return trustedPrintSender(event) && win && event.sender===win.webContents;
+}
+ipcMain.handle('md:fiscal-estado', event => fiscalSender(event) ? printing.settings().fiscal?.since || 0 : 0);
+ipcMain.handle('md:fiscal-aviso', (event,message) => {
+  if (fiscalSender(event) && typeof message==='string') fiscalStatus=message.slice(0,280);
+});
+ipcMain.handle('md:fiscal-imprimir', async (event, payload) => {
+  try {
+    if (!fiscalSender(event) || !payload || !Number.isSafeInteger(payload.id) || payload.id<1)
+      throw Error('Solicitação de impressão inválida.');
+    const {id,token,note,manual}=payload;
+    if (!manual && note.environment!=='1') throw Error('Somente notas de produção têm impressão automática.');
+    const reserve = async () => {
+      const response=await fetch('https://api.mydeliveryfood.com.br/api/restaurante/fiscal/notas/'+id+'/reservar-impressao',{
+        method:'POST',headers:{Authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(15000)
+      });
+      if (!response.ok) throw Error('Não foi possível reservar a NFC-e para impressão.');
+      return (await response.json()).reservada===true;
+    };
+    const result=await printing.invoice(note,manual===true ? async () => { await reserve(); return true; } : reserve);
+    if (!result.ignorado) fiscalStatus='NFC-e '+note.number+' enviada para '+result.printerName+'.';
+    return result;
+  } catch (error) {
+    fiscalStatus=error.message+' Confira a fila da impressora. A reimpressão está disponível na área fiscal.';
+    return {ok:false,motivo:fiscalStatus};
+  }
+});
+
+async function panelSession() {
+  const contents=win?.webContents;
+  if (!contents || contents.isDestroyed() || new URL(contents.getURL()).origin!=='https://mydeliveryfood.com.br') throw Error('Entre no painel da loja para carregar o cardápio.');
+  const session=await contents.executeJavaScript('({slug:localStorage.getItem("slug"),token:localStorage.getItem("token")})');
+  if (!session?.token || !/^[a-z0-9_-]{1,200}$/i.test(session.slug || '')) throw Error('Entre no painel da loja para carregar o cardápio.');
+  return session;
+}
+let stationCatalog;
+async function readStationCatalog() {
+  const {slug,token}=await panelSession();
+  const response=await fetch('https://api.mydeliveryfood.com.br/api/restaurante/'+encodeURIComponent(slug)+'/catalogo-impressao',{
+    headers:{Authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(20000)
+  });
+  if (!response.ok) throw Error('Não foi possível carregar o cardápio da loja. Use Atualizar lista para tentar novamente.');
+  const catalog=await response.json();
+  if (catalog.slug!==slug || (await panelSession()).token!==token) throw Error('A loja conectada mudou. Atualize a lista.');
+  stationCatalog=catalog;
+  return catalog;
+}
+
 function settingsSender(event) {
   return printingWindow && !printingWindow.isDestroyed() && event.sender === printingWindow.webContents && event.senderFrame === event.sender.mainFrame;
 }
@@ -223,15 +273,30 @@ ipcMain.handle('md:abrir-config-impressora', event => {
 });
 ipcMain.handle('md:config-impressora', async (event, action, value) => {
   try {
-    if (action === 'test' && (settingsSender(event) || trustedPrintSender(event))) return await printing.test();
+    if (action === 'test' && (settingsSender(event) || trustedPrintSender(event))) {
+      if (settingsSender(event) && value?.name) return await printing.test(value.name,value.direct===true);
+      if (trustedPrintSender(event)) {
+        const cfg=printing.settings();
+        return await printing.test(cfg.printerName || selectPrinter(await printing.list()).name,false);
+      }
+      return await printing.test();
+    }
     if (!settingsSender(event)) throw new Error('Abra a configuração pelo menu MyDelivery.');
     if (action === 'load') {
       const printers = await printing.list();
       let automaticPrinter = '';
       try { automaticPrinter = selectPrinter(printers).name; } catch (_) {}
-      return { ok: true, settings: printing.settings(), printers, automaticPrinter };
+      return { ok: true, settings: printing.settings(), printers, automaticPrinter, fiscalStatus };
     }
-    if (action === 'save') return { ok: true, settings: await printing.save(value) };
+    if (action === 'catalog') return {ok:true,catalog:await readStationCatalog()};
+    if (action === 'save') {
+      if (value.routingUpdate) {
+        const {slug,rules}=value.routingUpdate;
+        if ((await panelSession()).slug!==slug || stationCatalog?.slug!==slug) throw Error('A loja mudou. Atualize a lista antes de salvar.');
+        if (rules) rules.byName=require('./station-routing').namedProducts(stationCatalog.produtos);
+      }
+      return {ok:true,settings:await printing.save(value)};
+    }
     throw new Error('Ação inválida.');
   } catch (error) { return { ok: false, motivo: error.message }; }
 });

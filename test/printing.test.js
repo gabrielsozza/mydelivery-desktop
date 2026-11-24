@@ -15,7 +15,7 @@ function setup(t, behavior) {
   class Window {
     constructor(options) {
       this.options = options; this.destroyed = false; windows.push(this);
-      this.webContents = { print: (options, callback) => { jobs.push(options); if (behavior) behavior(callback); else callback(true); } };
+      this.webContents = { debugger: {attach(){}, isAttached:()=>true, detach(){}, sendCommand:async cmd=>cmd==='DOM.getDocument'?{root:{nodeId:1}}:cmd==='DOM.querySelector'?{nodeId:2}:{model:{height:320}}}, print: (options, callback) => { jobs.push(options); if (behavior) behavior(callback); else callback(true); } };
     }
     async loadURL(url) { this.html = decodeURIComponent(url.split(',').slice(1).join(',')); }
     isDestroyed() { return this.destroyed; }
@@ -436,4 +436,70 @@ test('direct printer test sends only a small native ticket and one cut', async t
   assert.equal(f.jobs.length, 0);
   assert.equal(f.raw.length, 1);
   assert.equal(f.raw[0][0].toString('ascii'), '\x1b@\x1ba\x01MyDelivery\nTeste de impressao\n\n\n\x1dV\x01');
+});
+
+test('dedicated fiscal queue receives one authorized document; all order paths exclude it',async t=>{
+  const f=setup(t);
+  f.setPrinters([{name:'CAIXA',isDefault:true},{name:'PIZZARIA'}]);
+  const fiscal={printerName:'CAIXA',width:80};
+  const cfg={printerName:'PIZZARIA',width:80,mode:'driver',fiscal};
+  assert.equal(f.service.settings().fiscal,null);
+  await f.service.save(cfg);
+  const since=f.service.settings().fiscal.since;
+  assert.ok(since>0);
+  const raw=Buffer.from('Pedido #123\nItens\n(1) Pizza\nDANFE NFC-e\nDocumento auxiliar da NFC-e\nPROTOCOLO DE TESTE\nPowered By: MyDelivery\n');
+  await f.service.print(raw,'CAIXA');
+  await f.service.test();
+  assert.deepEqual(f.jobs.map(j=>j.deviceName),['PIZZARIA','PIZZARIA']);
+  assert.doesNotMatch(f.windows[0].html,/PROTOCOLO DE TESTE/);
+  assert.match(f.windows[0].html,/Pizza/);
+  const note={key:'1'.repeat(44),environment:'1',protocol:'123',qr:'https://example.org/?p=abc',issuer:'Teste & Cia',number:'10',total:'20',
+    items:[{name:'Pizza',price:'20',total:'20',quantity:'1',unit:'UN'}],payments:[{type:'17',amount:'20'}]};
+  await f.service.invoice(note,async()=>true);
+  await f.service.invoice(note,async()=>false);
+  assert.deepEqual(f.jobs.map(j=>j.deviceName),['PIZZARIA','PIZZARIA','CAIXA']);
+  assert.equal(f.jobs[2].copies,1);
+  assert.match(f.windows[2].html,/Teste &amp; Cia/);
+  assert.match(f.windows[2].html,/<svg/);
+  assert.match(f.windows[2].html,/Pix/);
+  await f.service.save({...cfg,printerName:'CAIXA',kitchen:{printerName:'PIZZARIA',width:80,mode:'driver'}});
+  assert.equal(f.service.settings().fiscal.since,since);
+  await f.service.print(raw);
+  assert.equal(f.jobs.at(-1).deviceName,'PIZZARIA');
+  f.setPrinters([{name:'PIZZARIA'}]);
+  await f.service.print(raw);
+  let claimed=false;
+  await assert.rejects(f.service.invoice(note,async()=>{claimed=true;return true;}),/não está instalada/);
+  assert.equal(claimed,false);
+  assert.equal(f.jobs.at(-1).deviceName,'PIZZARIA');
+  await f.service.save({...cfg,fiscal:null});
+  assert.equal(f.service.settings().fiscal,null);
+});
+
+test('mixed ticket retains only assigned items and modifiers at each station, with no blank ticket',async t=>{
+  const f=setup(t);
+  const {namedProducts}=require('../station-routing');
+  f.setPrinters(['CAIXA','PIZZARIA','COZINHA','BAR'].map(name=>({name})));
+  const rules={categories:{1:'PIZZARIA',2:'COZINHA',3:'BAR'},products:{2:'COZINHA'},external:{'pizza especial':'PIZZARIA'},
+    byName:namedProducts([{id:6,categoriaId:3,nome:'Suco'}]),fallback:''};
+  await f.service.save({printerName:'PIZZARIA',mode:'auto',width:80,fiscal:{printerName:'CAIXA',width:80},routingUpdate:{slug:'maria-massas',rules}});
+  let bytes='Pedido 123\nItens\n'; const itemSpans=[];
+  function item(name,productId,categoryId,extra){
+    const start=bytes.length;bytes+='(1) '+name+' R$ 9,00\n'+(extra?'+ '+extra+'\n':'');
+    itemSpans.push({name,productId,categoryId,start,end:bytes.length});
+  }
+  item('Pizza especial',null,null,'sem cebola');item('Entrada',2,1);item('Prato',3,2);item('Sobremesa',4,2);item('Suco',null,null,'sem gelo');
+  const ctx={restaurantSlug:'maria-massas',orderId:123,itemSpans};
+  await f.service.print(Buffer.from(bytes+'Pagamento\nTotal: R$ 45,00\n'),null,ctx);
+  assert.deepEqual(f.jobs.map(j=>j.deviceName),['PIZZARIA','COZINHA','BAR']);
+  const [pizza,kitchen,bar]=f.windows.map(w=>w.html.replace(/<[^>]+>/g,' '));
+  assert.match(pizza,/sem cebola/);assert.doesNotMatch(pizza,/Prato|Sobremesa|Suco|Entrada|gelo|45,00/);
+  assert.match(kitchen,/Entrada/);assert.match(kitchen,/Prato/);assert.match(kitchen,/Sobremesa/);assert.doesNotMatch(kitchen,/Suco|Pizza|gelo|45,00/);
+  assert.match(bar,/sem gelo/);assert.doesNotMatch(bar,/Prato|Pizza|Sobremesa|45,00/);
+  await f.service.print(Buffer.from(bytes.slice(0,itemSpans[0].end)),null,{...ctx,itemSpans:itemSpans.slice(0,1)});
+  assert.equal(f.jobs.length,4);assert.equal(f.jobs[3].deviceName,'PIZZARIA');
+  await assert.rejects(f.service.print(Buffer.from(bytes),null,{...ctx,itemSpans:[{...itemSpans[0],name:'Outro'}]}),/Outro/);
+  await f.service.test('CAIXA',true);
+  assert.equal(f.raw.length,1);assert.equal(f.raw[0][1],'CAIXA');
+  assert.ok(f.raw[0][0].length<48);
 });

@@ -26,6 +26,15 @@ function receiptLines(input) {
   if (start < bytes.length) lines.push({raw:bytes.subarray(start),text:visible,image});
   return lines;
 }
+function orderWithoutInvoice(input) {
+  const lines = receiptLines(input);
+  const start = lines.findIndex((line,i) => line.text.trim() === 'DANFE NFC-e'
+    && lines[i+1]?.text.trim() === 'Documento auxiliar da NFC-e');
+  if (start < 0) return input;
+  const footer = lines.findIndex((line,i) => i > start && line.text.trim() === 'Powered By: MyDelivery');
+  if (footer < 0) return input;
+  return Buffer.concat([...lines.slice(0,start), ...lines.slice(footer)].map(line => line.raw));
+}
 function isAddress(text) {
   return /^(?:Entrega|End|Endereco):\s*\S/i.test(text) && !/^(?:Entrega|End|Endereco):\s*(?:Retirada no local|-+)\s*$/i.test(text);
 }
@@ -314,4 +323,4 @@ function thermalReceipt(input, width = 80) {
   return Buffer.from(out);
 }
 
-module.exports = { receiptDocument, thermalReceipt, layoutReceipt, kitchenReceipt };
+module.exports = { orderWithoutInvoice, receiptDocument, thermalReceipt, layoutReceipt, kitchenReceipt };

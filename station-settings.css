@@ -1,0 +1,17 @@
+.sectors{margin:16px 0 22px;border:1px solid #ddd9d3;border-radius:12px;padding:18px;background:#fffcf9}
+.sectors h2{font-size:18px;margin:0 0 10px}
+.sectors .switch-line{display:flex;align-items:center;gap:9px;margin:0}
+.sectors input[type=checkbox],.paper-test input{accent-color:#d85908;width:17px;height:17px}
+.sectors p,.paper-test p{font-size:14px;margin:8px 0 14px}
+.sectors input[type=search],.sectors input[type=text]{box-sizing:border-box;width:100%;border:1px solid #d7d2cc;border-radius:8px;padding:10px 12px;font:inherit;background:white}
+.sectors select,.paper-test select{font-size:14px;margin:0;min-width:0;padding:9px}
+.station-category,.station-imports{background:white;border:1px solid #e3ded8;border-radius:9px;padding:10px 12px;margin:8px 0}
+.station-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(155px,48%);gap:12px;align-items:center;font-size:14px}
+.station-category>.station-row{font-weight:650}
+.sectors details{margin:8px 0 0}.sectors details summary{margin:0;padding:6px 0;cursor:pointer;color:#6d4f39}
+.sectors details .station-row{padding:7px 0;border-top:1px solid #f1ede9}
+.station-add{display:flex;gap:8px}.station-add button{white-space:nowrap}
+.sectors label{margin:14px 0 6px}.sectors #station-preset{color:#994004;margin-bottom:8px}
+.paper-test{border-top:1px solid #e5e0da;padding-top:14px;margin-bottom:18px}
+.paper-test label.inline{display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:450}
+@media(max-width:540px){body{padding:14px}.card{padding:15px}.station-row{grid-template-columns:1fr;gap:5px}}
