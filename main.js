@@ -223,6 +223,7 @@ ipcMain.handle('md:abrir-config-impressora', event => {
 });
 ipcMain.handle('md:config-impressora', async (event, action, value) => {
   try {
+    if (action === 'test' && (settingsSender(event) || trustedPrintSender(event))) return await printing.test();
     if (!settingsSender(event)) throw new Error('Abra a configuração pelo menu MyDelivery.');
     if (action === 'load') {
       const printers = await printing.list();
@@ -231,7 +232,6 @@ ipcMain.handle('md:config-impressora', async (event, action, value) => {
       return { ok: true, settings: printing.settings(), printers, automaticPrinter };
     }
     if (action === 'save') return { ok: true, settings: await printing.save(value) };
-    if (action === 'test') return await printing.print(Buffer.from('\x1b@\x1ba\x01\x1bE\x01MYDELIVERY\n\x1bE\x00TESTE DE IMPRESSAO\n\nConfira se este cupom esta legivel.\n\n\x1dV\x01', 'ascii'));
     throw new Error('Ação inválida.');
   } catch (error) { return { ok: false, motivo: error.message }; }
 });

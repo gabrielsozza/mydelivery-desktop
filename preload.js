@@ -21,7 +21,7 @@ try {
 contextBridge.exposeInMainWorld('myDeliveryDesktop', {
   isDesktop: true,
   platform: process.platform, // 'win32' | 'darwin'
-  versao: '1.0.46',
+  versao: '1.0.47',
   impressaoCozinhaSomente: true,
   impressaoCaixaSomente: true,
 
@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('myDeliveryDesktop', {
       forceKitchenCompact: context && context.forceKitchenCompact === true
     }),
 
+  testarImpressao: () => ipcRenderer.invoke('md:config-impressora', 'test'),
   listarImpressoras: () => ipcRenderer.invoke('md:listar-impressoras'),
   configurarImpressora: (action, value) => ipcRenderer.invoke('md:config-impressora', action, value),
 

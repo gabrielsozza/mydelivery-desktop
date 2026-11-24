@@ -411,3 +411,29 @@ test('four destinations preserve existing settings and resume only failed copies
 test('duplicate extra destination sends a single copy',async t=>{
  const f=setup(t);f.setPrinters([{name:'Caixa'}]);await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:null,extras:[{printerName:'Caixa',width:58,mode:'raw',receipt:'kitchen'}]});await f.service.print(kitchenOrder());assert.equal(f.raw.length,1);assert.match(f.raw[0][0].toString('ascii'),/Cliente/);
 });
+
+test('printer test sends one short page per destination, even for overlapping clicks', async t => {
+  const f = setup(t);
+  f.setPrinters([{ name: 'Caixa' }, { name: 'Cozinha' }]);
+  await f.service.save({ printerName: 'Caixa', width: 80, mode: 'auto', kitchen: { printerName: 'Cozinha', width: 58, mode: 'driver' } });
+  await Promise.all([f.service.test(), f.service.test()]);
+  assert.deepEqual(f.jobs.map(job => job.deviceName), ['Caixa', 'Cozinha']);
+  for (const [i, width] of [80, 58].entries()) {
+    const job = f.jobs[i];
+    assert.deepEqual(job.pageSize, { width: width * 1000, height: 40000 });
+    assert.deepEqual(job.pageRanges, [{ from: 0, to: 0 }]);
+    assert.equal(job.copies, 1);
+    assert.ok(f.windows[i].html.includes('size:' + width + 'mm 40mm'));
+  }
+  await f.service.print(sample, 'Caixa');
+  assert.equal(f.jobs[2].pageRanges, undefined);
+});
+
+test('direct printer test sends only a small native ticket and one cut', async t => {
+  const f = setup(t);
+  await f.service.save({ printerName: 'EPSON TM-T20', width: 58, mode: 'raw' });
+  await f.service.test();
+  assert.equal(f.jobs.length, 0);
+  assert.equal(f.raw.length, 1);
+  assert.equal(f.raw[0][0].toString('ascii'), '\x1b@\x1ba\x01MyDelivery\nTeste de impressao\n\n\n\x1dV\x01');
+});

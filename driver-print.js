@@ -21,6 +21,9 @@ function selectPrinter(printers, name) {
 
 function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
   let queue = Promise.resolve();
+  let pendingTest;
+  const testHeightMm = 40;
+  const testBytes = Buffer.from('\x1b@\x1ba\x01MyDelivery\nTeste de impressao\n\n\n\x1dV\x01', 'ascii');
   function settings() {
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'printing.json'), 'utf8')); } catch (_) {}
@@ -56,16 +59,23 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     // Talentos pizzas explicitly requested the complete cashier copy in its kitchen.
     const fullKitchen = context && context.restaurantSlug === 'talentos-pizzas'
       && context.forceKitchenCompact !== true;
-    if ((config.label === 'Cozinha'||config.receipt==='kitchen') && !fullKitchen) bytes = kitchenReceipt(bytes);
+    const testReceipt = context && context.testReceipt === true;
+    if (!testReceipt && (config.label === 'Cozinha'||config.receipt==='kitchen') && !fullKitchen) bytes = kitchenReceipt(bytes);
     // The automatic path uses the same large, readable document layout as the
     // browser. Native ESC/POS remains an explicit choice for devices whose
     // driver cannot print a receipt document.
     if (config.mode === 'raw' && !isVirtual(printer.name)) {
-      await rawPrint(thermalReceipt(bytes, config.width), printer.name);
+      await rawPrint(testReceipt ? testBytes : thermalReceipt(bytes, config.width), printer.name);
       return { ok: true, printerName: printer.name, via: 'raw' };
     }
     // OneNote uses the regular driver path, never the thermal RAW spooler.
-    const html = receiptDocument(bytes, config.width);
+    const html = testReceipt
+      ? `<!doctype html><meta charset="utf-8"><title>Teste MyDelivery</title><style>@page{size:${config.width}mm ${testHeightMm}mm;margin:0}body{margin:4mm;text-align:center;font:12pt/1.4 Arial,sans-serif}</style><b>MyDelivery</b><br>Teste de impressão`
+      : receiptDocument(bytes, config.width);
+    const testOptions = testReceipt ? {
+      pageSize: { width: config.width * 1000, height: testHeightMm * 1000 },
+      pageRanges: [{ from: 0, to: 0 }]
+    } : {};
     const printWindow = new BrowserWindow({ show: false, width: 480, height: 800, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: false, backgroundThrottling: false } });
     try {
       try { await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)); }
@@ -73,7 +83,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('O driver não confirmou o envio. Confira a fila da impressora antes de tentar novamente.')), 45000);
         try {
-          printWindow.webContents.print({ silent: true, deviceName: printer.name, printBackground: true, color: false, margins: { marginType: 'none' }, copies: 1 }, (success, reason) => {
+          printWindow.webContents.print({ silent: true, deviceName: printer.name, ...testOptions, printBackground: true, color: false, margins: { marginType: 'none' }, copies: 1 }, (success, reason) => {
             clearTimeout(timer);
             if (success) resolve();
             else reject(new Error((reason || 'Falha no driver de impressão.') + (/onenote/i.test(printer.name) ? ' Abra o OneNote uma vez, conclua a configuração inicial e teste novamente.' : ' Confira a conexão e o driver da impressora.')));
@@ -152,6 +162,12 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     queue = job.catch(() => {});
     return job;
   }
-  return { settings, save, list, print };
+  function test() {
+    if (!pendingTest) {
+      pendingTest = print(testBytes, null, { testReceipt: true }).finally(() => { pendingTest = undefined; });
+    }
+    return pendingTest;
+  }
+  return { settings, save, list, print, test };
 }
 module.exports = { createPrintingService, selectPrinter, isVirtual };
