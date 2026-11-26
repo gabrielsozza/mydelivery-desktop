@@ -18,7 +18,12 @@ function Install-App {
   Stop-TestApp
   # NSIS requires /D to be last and unquoted, even when the path contains spaces.
   $p = Start-Process -FilePath $Installer -ArgumentList "/S /D=$installDir" -PassThru -Wait
-  if ($p.ExitCode -ne 0) { throw "Installer failed: $($p.ExitCode)" }
+  if ($p.ExitCode -ne 0) {
+    Get-WinEvent -FilterHashtable @{ LogName='Application'; Id=1000; StartTime=(Get-Date).AddMinutes(-2) } -ErrorAction SilentlyContinue |
+      Where-Object { $_.Message -match 'MyDelivery-Setup' } |
+      Select-Object -First 1 -ExpandProperty Message | Write-Output
+    throw "Installer failed: $($p.ExitCode)"
+  }
   if (!(Test-Path $exe)) { throw 'Installer did not create MyDelivery.exe' }
   Stop-TestApp
 }
