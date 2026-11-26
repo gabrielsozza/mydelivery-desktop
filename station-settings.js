@@ -121,5 +121,5 @@ const stationEditor=(()=>{
     if (!catalog.avulsos.some(n=>norm(n)===norm(name))) catalog.avulsos.push(name);
     $('station-search').value=name;field.value='';render();
   };
-  return {load,update:()=>loaded?{slug:catalog.slug,rules:$('station-on').checked?rules:null}:null};
+  return {load,update:(active=true)=>loaded?{slug:catalog.slug,rules:active && $('station-on').checked?rules:null}:null};
 })();

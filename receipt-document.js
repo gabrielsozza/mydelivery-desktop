@@ -116,6 +116,12 @@ function layoutReceipt(input, width = 80, forDriver = false) {
   }
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (!line.image && /^Mesa:\s*\S/i.test(line.text)) {
+      const name = line.text.replace(/^Mesa:\s*/i,'').trim();
+      const title = /^Mesa\b/i.test(name) ? name : 'Mesa ' + name;
+      out.push(Buffer.from('\x1ba\x01\x1bE\x01' + title + '\n\x1ba\0\x1bE\0','ascii'));
+      continue;
+    }
     if (line.image) { out.push(line.raw); continue; }
     if (/^\(\d+(?:[.,]\d+)?\)\s/.test(line.text)) {
       let text = line.text;
@@ -197,7 +203,7 @@ function receiptDocument(input, width = 80, station = false) {
   if (!bytes.length || bytes.length > 2 * 1024 * 1024) throw new Error('Cupom vazio ou grande demais.');
   width = width === 58 ? 58 : 80;
   const printableWidth = width === 58 ? 48 : 72;
-  const sidePadding = width === 58 ? 1.5 : 2;
+  const sidePadding = width === 58 ? 2.5 : 3.5;
   const baseFont = width === 80 ? 15 : 12.5;
   let preparation = false;
   let align = 'left', bold = false, size = 0, line = '', text = '', output = '', units = 0;
@@ -239,7 +245,8 @@ function receiptDocument(input, width = 80, station = false) {
     const usablePx = (printableWidth - sidePadding * 2) * 96 / 25.4;
     const address = isAddress(plain);
     const customer = /^(?:Nome|Telefone|Fone|Obs|Observacao|Referencia|Forma de Pagamento):/i.test(plain);
-    const heading = (width === 80 && isHeading(plain)) || (station && /^(?:SETOR:|Mesa:|PEDIDO CANCELADO)/i.test(plain));
+    const tableHeading = /^Mesa\s+\S/i.test(plain);
+    const heading = tableHeading || (width === 80 && isHeading(plain)) || (station && /^(?:SETOR:|Mesa:|PEDIDO CANCELADO)/i.test(plain));
     // Addresses may flow onto another line; never shrink a long street to tiny text.
     // The browser wraps long text instead of shrinking it to unreadable type.
     const scale = width === 80 || preparationRow || address || customer || heading || item ? 1 : Math.min(1, usablePx / Math.max(1, units * 7.6));
@@ -259,7 +266,7 @@ function receiptDocument(input, width = 80, station = false) {
     if (scale < 1) line = line.replace(/font-size:([\d.]+)px/g, (_, px) => 'font-size:' + (Number(px) * scale).toFixed(3) + 'px');
     output += /^[-=]{8,}$/.test(plain)
       ? `<div class="separator" style="border-top-style:${plain[0] === '=' ? 'double' : 'dashed'}"></div>`
-      : `<div class="line${address ? ' address' : customer ? ' customer' : heading ? ' heading' : ''}${item ? ' amount-row' + (stacked ? ' stacked' : '') : ''}${preparationRow ? ' preparation' : ''}" style="text-align:${align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
+      : `<div class="line${address ? ' address' : customer ? ' customer' : heading ? ' heading' : ''}${item ? ' amount-row' + (stacked ? ' stacked' : '') : ''}${preparationRow ? ' preparation' : ''}" style="text-align:${tableHeading ? 'center' : align};${item ? 'display:flex;justify-content:space-between' : ''}">${line || '<br>'}</div>`;
     line = ''; units = 0;
   }
   function need(i, n) { if (i + n > bytes.length) throw new Error('Cupom incompleto. Tente imprimir novamente.'); }
@@ -303,7 +310,7 @@ function receiptDocument(input, width = 80, station = false) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{size:auto;margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:1mm ${sidePadding}mm;font-family:Arial,'Segoe UI',Helvetica,sans-serif;font-size:${baseFont}px;font-weight:700;line-height:1.35}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.35em}.heading{line-height:1.25;padding:4px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{flex:1;min-width:0;white-space:normal;overflow-wrap:break-word}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.amount-row.stacked{flex-direction:column;gap:0}.amount-row.stacked>span:last-child{align-self:flex-end}.preparation{white-space:normal;overflow-wrap:break-word;line-height:1.45;padding:2px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:1px solid black;margin:6px 0}svg{break-inside:avoid}${station ? '.line span{-webkit-text-stroke:0!important}.preparation{padding:3px 0}' : ''}</style></head><body data-paper-width="${width}">${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{size:auto;margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:1mm ${sidePadding}mm;font-family:Arial,'Segoe UI',Helvetica,sans-serif;font-size:${baseFont}px;font-weight:700;line-height:1.35}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.35em}.heading{line-height:1.25;padding:4px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{flex:1;min-width:0;white-space:normal;overflow-wrap:break-word}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.amount-row.stacked{flex-direction:column;gap:0}.amount-row.stacked>span:last-child{align-self:flex-end}.preparation{white-space:normal;overflow-wrap:break-word;line-height:1.45;padding:2px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:1px solid black;margin:6px 0}svg{break-inside:avoid}${station ? '.preparation{padding:3px 0}' : ''}</style></head><body data-paper-width="${width}">${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use
@@ -327,9 +334,9 @@ function thermalReceipt(input, width = 80, station = false) {
     while (line.raw[start] === 27) start += line.raw[start + 1] === 64 ? 2 : 3;
     return Buffer.concat([line.raw.subarray(0,start),Buffer.from('\x1ba\0\x1b!\0\x1bE\0' + rows.join('\n') + '\n','ascii')]);
   }));
-  if (width === 80 || station) {
+  {
     bytes = Buffer.concat(receiptLines(bytes).map(line => {
-      if (line.image || !(isHeading(line.text) || (station && /^(?:SETOR:|Mesa:|PEDIDO CANCELADO)/i.test(line.text)))) return line.raw;
+      if (line.image || !(/^Mesa\s+\S/i.test(line.text) || (width === 80 && isHeading(line.text)) || (station && /^(?:SETOR:|Mesa:|PEDIDO CANCELADO)/i.test(line.text)))) return line.raw;
       // Double height only: retain native column width and all original commands.
       let start = 0;
       while (line.raw[start] === 27) start += line.raw[start + 1] === 64 ? 2 : 3;
@@ -337,7 +344,10 @@ function thermalReceipt(input, width = 80, station = false) {
       return Buffer.concat([line.raw.subarray(0,start),Buffer.from([27,33,16,27,69,1]),line.raw.subarray(start,end),Buffer.from([27,33,0]),line.raw.subarray(end)]);
     }));
   }
-  const out = [27, 69, 1];
+  // Set the printable area in dots after every printer reset.
+  const dots = width === 58 ? 360 : 540;
+  const margins = [29, 76, 12, 0, 29, 87, dots & 255, dots >> 8];
+  const out = [...margins, 27, 69, 1];
   for (let i = 0; i < bytes.length;) {
     if (bytes[i] === 29 && bytes[i + 1] === 118 && bytes[i + 2] === 48) {
       if (i + 8 > bytes.length) throw new Error('Imagem de cupom incompleta.');
@@ -346,13 +356,12 @@ function thermalReceipt(input, width = 80, station = false) {
       if (end > bytes.length) throw new Error('Imagem de cupom incompleta.');
       for (; i < end; i++) out.push(bytes[i]);
     } else if (bytes[i] === 27 && bytes[i + 1] === 64) {
-      out.push(27, 64, 27, 69, 1); i += 2;
+      out.push(27, 64, ...margins, 27, 69, 1); i += 2;
     } else if (bytes[i] === 27 && bytes[i + 1] === 69 && i + 2 < bytes.length) {
-      if (station) out.push(27, 69, bytes[i + 2] & 1);
-      else out.push(27, 69, 1, 27, 71, bytes[i + 2] & 1);
+      out.push(27, 69, 1, 27, 71, bytes[i + 2] & 1);
       i += 3;
     } else if (bytes[i] === 27 && bytes[i + 1] === 33 && i + 2 < bytes.length) {
-      out.push(27, 33, station ? bytes[i + 2] : bytes[i + 2] | 8); i += 3;
+      out.push(27, 33, bytes[i + 2] | 8); i += 3;
     } else {
       out.push(bytes[i++]);
     }

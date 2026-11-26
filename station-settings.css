@@ -29,3 +29,16 @@
 .receipt-options .station-row:last-child { padding-bottom: 0; }
 .receipt-options .station-row span { font-weight: 600; overflow-wrap: anywhere; }
 .receipt-options select:focus-visible { outline: 2px solid #ba510d; outline-offset: 2px; }
+
+[hidden]{display:none!important}
+.device-group{border-top:1px solid #e5dfd9;margin:16px 0;padding:18px 0 0}
+.device-group h2{font-size:18px;margin:0 0 14px}
+#setup-kind{font-weight:650;background-color:#fff8f1;border-color:#ecbd94}
+#order-copies{border:1px solid #ded9d3;padding:12px 14px;border-radius:10px}
+#order-copies legend{font-size:15px;padding:0 5px;margin:0}
+#order-copies p{font-size:13px;margin:0 0 10px}
+.channel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}
+.channel-grid label{display:flex;align-items:center;gap:7px;font-weight:500;margin:0;padding:6px;background:#faf8f5;border-radius:6px}
+.channel-grid input{width:17px;height:17px;accent-color:#cc5300}
+#extra-devices,.paper-test{padding:12px 0}
+.actions{background:white;position:sticky;bottom:0;padding:12px 0;border-top:1px solid #e7e2dc}

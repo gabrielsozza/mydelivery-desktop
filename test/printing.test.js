@@ -273,7 +273,7 @@ test('disabled kitchen restores single-printer behavior; missing destination nev
 
 const manaReceipt = Buffer.from('\x1b@\x1ba\0\x1bE\x01(1) Pizza Tradicional Pequena\x1bE\0\n\x1ba\0\x1bE\x01                       R$ 30,00\x1bE\0\n\x1ba\0  + Frango com Catupiry (R$ 30,00)\n\x1ba\0\x1bE\x01(1) Refrigerante 1 L     R$ 10,00\x1bE\0\n\x1ba\0  + Coca-Cola Original\n','ascii');
 function visibleRows(bytes) {
-  return bytes.toString('ascii').replace(/\x1b@|\x1b[!aEtG][\s\S]/g,'').split('\n').filter(Boolean);
+  return bytes.toString('ascii').replace(/\x1d[LW][\s\S]{2}|\x1b@|\x1b[!aEtG][\s\S]/g,'').split('\n').filter(Boolean);
 }
 test('Mana photo: quantity, full pizza name and amount share one line on 58 and 80 mm', () => {
   for (const width of [58,80]) {
@@ -406,7 +406,7 @@ test('four destinations preserve existing settings and resume only failed copies
  let fail=true;const sent=[];f.options.rawPrint=async(bytes,name)=>{if(name==='Bar'&&fail)throw Error('Sem conexão');sent.push(name);};
  const service=createPrintingService(f.options);await assert.rejects(service.print(kitchenOrder()),/Sem conexão/);assert.deepEqual(sent,['Caixa','Cozinha','Expedição']);
  fail=false;await service.print(kitchenOrder());assert.deepEqual(sent,['Caixa','Cozinha','Expedição','Bar']);assert.equal(service.settings().extras.length,2);
- await assert.rejects(service.save({...service.settings(),extras:[extra('Bar','full'),extra('Bar','full'),extra('Bar','full')]}),/quatro/);
+ await assert.rejects(service.save({...service.settings(),extras:[extra('Bar','full'),extra('Bar','full'),extra('Bar','full')]}),/única vez/);
 });
 test('duplicate extra destination sends a single copy',async t=>{
  const f=setup(t);f.setPrinters([{name:'Caixa'}]);await f.service.save({printerName:'Caixa',width:80,mode:'raw',kitchen:null,extras:[{printerName:'Caixa',width:58,mode:'raw',receipt:'kitchen'}]});await f.service.print(kitchenOrder());assert.equal(f.raw.length,1);assert.match(f.raw[0][0].toString('ascii'),/Cliente/);
@@ -543,4 +543,32 @@ test('individual receipt content also applies without station routing', async t 
   assert.match(f.windows[1].html,/Subtotal:/);
   await reopened.print(kitchenOrder(),null,{target:'cashier',report:true});
   assert.match(f.windows[2].html,/Subtotal:/);
+});
+
+test('filtered full cashier copy accompanies only selected channels alongside six production printers', async t=>{
+  const f=setup(t);
+  const sectors=['Pizzaria','Cozinha','Bar','Grelha','Entradas','Doces'];
+  f.setPrinters([...sectors,'Caixa'].map(name=>({name})));
+  const rules={byName:{},products:{1:'Pizzaria'},categories:{},external:{},fallback:'Cozinha'};
+  await f.service.save({printerName:'Pizzaria',width:80,mode:'raw',extras:sectors.slice(1).map(printerName=>({printerName,width:80,mode:'raw',receipt:'kitchen'})),routingUpdate:{slug:'loja',rules},fiscal:{printerName:'Caixa',width:80,channels:['ifood','delivery']}});
+  const service=createPrintingService(f.options);
+  const bytes=Buffer.from('Cliente\nEntrega: Rua Um\n------------\nItens\n(1) Pizza\n(1) Massa\n');
+  const spans=['Pizza','Massa'].map((name,i)=>{const start=bytes.indexOf('(1) '+name);return {name,productId:i+1,start,end:start+name.length+5};});
+  for(const channel of ['ifood','delivery','mesa','balcao','retirada','food99',undefined]){
+    const before=f.jobs.length;
+    await service.print(bytes,null,{restaurantSlug:'loja',orderChannel:channel,itemSpans:spans});
+    const match=['ifood','delivery'].includes(channel);
+    assert.equal(f.jobs.length-before,match?1:0);
+    if(match){assert.equal(f.jobs.at(-1).deviceName,'Caixa');assert.match(f.windows.at(-1).html,/Rua Um/);assert.match(f.windows.at(-1).html,/Pizza/);assert.match(f.windows.at(-1).html,/Massa/);}
+  }
+});
+test('table name has a centered bold line in both paper formats',()=>{
+ for(const width of [58,80]){
+   const bytes=Buffer.from('Cliente\nMesa: Mesa 1\n------------\nItens\n');
+   const html=receiptDocument(bytes,width,true);
+   assert.match(html,/text-align:center[^>]*><span style="font-weight:900[^>]*>Mesa 1/);
+   const raw=thermalReceipt(bytes,width,true);
+   assert.ok(raw.includes(Buffer.from([29,76,12,0])));
+   assert.match(raw.toString('ascii'),/\x1ba\x01[^\n]*Mesa 1/);
+ }
 });

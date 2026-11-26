@@ -12,9 +12,28 @@ function renderExtras(){
   function select(label,key,options){const l=document.createElement('label');if(key==='receipt') l.className='copy-content';l.textContent=label;const field=document.createElement('select');for(const [v,text] of options){const o=document.createElement('option');o.value=v;o.textContent=text;field.append(o);}field.value=extra[key];field.onchange=()=>{extra[key]=key==='width'?Number(field.value):field.value;};l.append(field);card.append(l);}
   const available=printers.map(p=>[p.name,p.displayName||p.name]);if(extra.printerName&&!printers.some(p=>p.name===extra.printerName))available.push([extra.printerName,extra.printerName+' (não encontrada)']);
   select('Impressora','printerName',[['','Selecione uma impressora'],...available]);select('Conteúdo do cupom','receipt',[['kitchen','Itens e observações para preparo'],['full','Completa com endereço']]);select('Papel','width',[[80,'80 mm'],[58,'58 mm']]);select('Como imprimir','mode',[['auto','Automático (cupom legível pelo driver)'],['driver','Pelo driver do sistema'],['raw','Térmica direta — ESC/POS']]);root.append(card);
- });document.querySelector('#add-printer').hidden=extras.length>=2;
+ });document.querySelector('#add-printer').disabled=!printers.length;
 }
-document.querySelector('#add-printer').onclick=()=>{if(extras.length>=2)return;extras.push({printerName:'',width:80,mode:'auto',receipt:'kitchen'});renderExtras();};
+document.querySelector('#add-printer').onclick=()=>{extras.push({printerName:'',width:80,mode:'auto',receipt:'kitchen'});renderExtras();};
+const setupKind = document.querySelector('#setup-kind');
+const fiscalSelect = document.querySelector('#fiscal');
+const channels = document.querySelector('#order-copies');
+function showSetup() {
+  const sectors = setupKind.value === 'sectors';
+  document.querySelector('#second-printer').hidden = setupKind.value === 'single';
+  document.querySelector('#extra-devices').hidden = !sectors;
+  document.querySelector('.sectors').hidden = !sectors;
+  channels.hidden = !fiscalSelect.value;
+  document.body.classList.toggle('routing-on',sectors && document.querySelector('#station-on').checked);
+}
+setupKind.onchange = () => {
+  if (setupKind.value === 'sectors' && !document.querySelector('#station-on').disabled) {
+    document.querySelector('#station-on').checked = true;
+    document.querySelector('#station-on').dispatchEvent(new Event('change'));
+  }
+  showSetup();
+};
+fiscalSelect.addEventListener('change',showSetup);
 let automaticPrinter = '';
 function message(text, error = false) { status.textContent = text; status.className = error ? 'error' : 'success'; }
 function busy(value) { document.querySelectorAll('button').forEach(button => { button.disabled = value; }); }
@@ -71,7 +90,11 @@ async function load() {
     const testDestination=document.querySelector('#test-dest');
     testDestination.replaceChildren(...printers.map(p=>new Option(p.displayName||p.name,p.name)));
     testDestination.value=printer.value || automaticPrinter;
-    stationEditor.load(printers,result.settings);
+    await stationEditor.load(printers,result.settings);
+    setupKind.value = document.querySelector('#station-on').checked || extras.length ? 'sectors' : kitchen.value ? 'pair' : 'single';
+    setupKind.disabled=false;
+    channels.querySelectorAll('input').forEach(box=>box.checked=!!savedFiscal?.channels?.includes(box.value));
+    showSetup();
     printer.disabled = false; explain();
     message(printers.length ? '' : 'Nenhuma impressora encontrada. Instale o driver e clique em Atualizar lista.', !printers.length);
   } catch (error) { message(error.message, true); }
@@ -80,7 +103,7 @@ async function load() {
 async function save(test) {
   busy(true); message(test ? 'Enviando teste…' : 'Salvando…');
   try {
-    const saved = await api.configurarImpressora('save', { mainReceipt:document.querySelector('#main-receipt').value, routingUpdate:stationEditor.update(), printerName: printer.value, width: Number(width.value), mode: mode.value, fiscal: document.querySelector('#fiscal').value ? {printerName:document.querySelector('#fiscal').value,width:Number(document.querySelector('#fiscal-width').value)} : null, extras, kitchen: kitchen.value ? { printerName: kitchen.value, width: Number(kitchenWidth.value), mode: kitchenMode.value, receipt:document.querySelector('#kitchen-receipt').value } : null });
+    const saved = await api.configurarImpressora('save', { mainReceipt:document.querySelector('#main-receipt').value, routingUpdate:stationEditor.update(setupKind.value === 'sectors'), printerName: printer.value, width: Number(width.value), mode: mode.value, fiscal: document.querySelector('#fiscal').value ? {printerName:fiscalSelect.value,channels:Array.from(channels.querySelectorAll('input:checked'),b=>b.value),width:Number(document.querySelector('#fiscal-width').value)} : null, extras: setupKind.value === 'sectors' ? extras : [], kitchen: setupKind.value !== 'single' && kitchen.value ? { printerName: kitchen.value, width: Number(kitchenWidth.value), mode: kitchenMode.value, receipt:document.querySelector('#kitchen-receipt').value } : null });
     if (!saved.ok) throw new Error(saved.motivo);
     if (test) {
       const result = await api.configurarImpressora('test',{name:document.querySelector('#test-dest').value,direct:document.querySelector('#test-direct').checked});

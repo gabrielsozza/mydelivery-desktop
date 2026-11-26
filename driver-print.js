@@ -7,6 +7,10 @@ const { orderWithoutInvoice, receiptDocument, thermalReceipt, kitchenReceipt, st
 const { routeItems, validateRoutes } = require('./station-routing');
 const { fiscalDocument } = require('./fiscal-document');
 
+const orderChannels = ['ifood', 'delivery', 'mesa', 'balcao', 'retirada', 'food99'];
+function fiscalChannels(value) {
+  return orderChannels.filter(channel => Array.isArray(value) && value.includes(channel));
+}
 const isVirtual = name => /onenote|print to pdf|xps|fax/i.test(name || '');
 function selectPrinter(printers, name) {
   if (name) {
@@ -44,14 +48,14 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     let saved = {};
     try { saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'printing.json'), 'utf8')); } catch (_) {}
     const fiscal = saved.fiscal && typeof saved.fiscal.printerName === 'string' && saved.fiscal.printerName && Number.isFinite(saved.fiscal.since)
-      ? { printerName: saved.fiscal.printerName, width: saved.fiscal.width === 58 ? 58 : 80, since: saved.fiscal.since } : null;
+      ? { printerName: saved.fiscal.printerName, width: saved.fiscal.width === 58 ? 58 : 80, since: saved.fiscal.since, ...(saved.fiscal.channels?.length ? {channels:fiscalChannels(saved.fiscal.channels)} : {}) } : null;
     const routes = saved.routes || {};
     const maria = routes['maria-massas'];
     if (maria && !maria.receipts) {
       const targets = [maria.fallback, ...Object.values(maria.categories), ...Object.values(maria.products), ...Object.values(maria.external)];
       maria.receipts = Object.fromEntries(targets.filter(name => name?.trim().toUpperCase() === 'COZINHA').map(name => [name, 'full']));
     }
-    return { routes, fiscal, mainReceipt: saved.mainReceipt === 'kitchen' ? 'kitchen' : 'full', printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', extras: Array.isArray(saved.extras)?saved.extras.slice(0,2).filter(x=>x&&typeof x.printerName==='string'&&x.printerName).map(x=>({printerName:x.printerName,width:x.width===58?58:80,mode:['auto','driver','raw'].includes(x.mode)?x.mode:'auto',receipt:x.receipt==='full'?'full':'kitchen'})):[], kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { ...(saved.kitchen.receipt ? {receipt:saved.kitchen.receipt} : {}), printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
+    return { routes, fiscal, mainReceipt: saved.mainReceipt === 'kitchen' ? 'kitchen' : 'full', printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', extras: Array.isArray(saved.extras)?saved.extras.filter(x=>x&&typeof x.printerName==='string'&&x.printerName).map(x=>({printerName:x.printerName,width:x.width===58?58:80,mode:['auto','driver','raw'].includes(x.mode)?x.mode:'auto',receipt:x.receipt==='full'?'full':'kitchen'})):[], kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { ...(saved.kitchen.receipt ? {receipt:saved.kitchen.receipt} : {}), printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
   }
   async function list() { return getContents().getPrintersAsync(); }
   async function save(value) {
@@ -69,7 +73,8 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       kitchen = { ...(['full','kitchen'].includes(k.receipt) ? {receipt:k.receipt} : {}), printerName: k.printerName, width: k.width, mode: k.mode };
     }
     const extras = value.extras === undefined ? settings().extras : value.extras;
-    if(!Array.isArray(extras)||extras.length>2)throw new Error('Configure no máximo quatro impressoras.');
+    if (!Array.isArray(extras)) throw Error('Confira as impressoras adicionais.');
+    if (new Set(extras.map(p=>p?.printerName)).size !== extras.length) throw Error('Cada impressora adicional deve aparecer uma única vez.');
     for(const extra of extras){
       if(!extra||typeof extra.printerName!=='string'||!extra.printerName||![58,80].includes(extra.width)||!['auto','raw','driver'].includes(extra.mode)||!['full','kitchen'].includes(extra.receipt))throw new Error('Confira as opções das impressoras adicionais.');
       const target=selectPrinter(await list(),extra.printerName);
@@ -89,9 +94,10 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       if (typeof requested.printerName !== 'string' || !requested.printerName || ![58,80].includes(requested.width)) throw Error('Escolha a impressora e o papel da NFC-e.');
       const selected = selectPrinter(await list(), requested.printerName);
       if (isVirtual(selected.name)) throw Error('Escolha uma impressora física para a NFC-e automática.');
-      if (printer.name === selected.name && !Object.keys(routes).length && ![kitchen,...extras].some(t => t && t.printerName !== selected.name))
+      const channels = fiscalChannels(requested.channels);
+      if (!channels.length && printer.name === selected.name && !Object.keys(routes).length && ![kitchen,...extras].some(t => t && t.printerName !== selected.name))
         throw Error('Selecione outra impressora para os pedidos antes de reservar esta para NFC-e.');
-      fiscal = { printerName: selected.name, width: requested.width, since: previous ? previous.since : Date.now() };
+      fiscal = { printerName: selected.name, width: requested.width, since: previous ? previous.since : Date.now(), ...(channels.length ? {channels} : {}) };
     }
     const installed = await list();
     for (const rules of Object.values(routes)) {
@@ -204,9 +210,20 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     if (config.fiscal && explicitName === config.fiscal.printerName && targetMode === 'all') {
       return send(bytes, null, context);
     }
+    const fiscalName = config.fiscal?.printerName;
+    const fiscalCopy = fiscalName && targetMode === 'all' && !context?.testReceipt && !context?.report
+      && config.fiscal.channels?.includes(context?.orderChannel);
     const eligible = targets.filter(t => !config.fiscal || t.printerName !== config.fiscal.printerName);
     const resolved = eligible.map(target => ({ ...target, printer: selectPrinter(printers, target.printerName) }));
-    const orderTargets = resolved.filter(target => target.printer.name !== config.fiscal?.printerName);
+    const orderTargets = resolved.filter(target => target.printer.name !== fiscalName);
+    if (fiscalCopy) {
+      const device = [config,config.kitchen,...config.extras].find(p=>p?.printerName===fiscalName);
+      orderTargets.push({printer:selectPrinter(printers,fiscalName),label:'Caixa',receipt:'full',
+        width:config.fiscal.width,mode:device?.mode || 'auto',ticket:orderWithoutInvoice(bytes)});
+    }
+    if (!orderTargets.length && config.fiscal?.channels?.length && targetMode === 'all' && !context?.report)
+      return {ok:true,ignorado:true};
+
     if (!orderTargets.length) throw Error('Esta impressora está reservada para NFC-e. Confira o destino dos pedidos em Configurar impressora.');
     const unique = orderTargets.filter((target, i) => orderTargets.findIndex(t => t.printer.name === target.printer.name) === i);
     if (unique.length === 1) return sendOne(unique[0].ticket || bytes, unique[0], unique[0].printer, context);

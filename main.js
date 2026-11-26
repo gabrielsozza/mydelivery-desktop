@@ -201,7 +201,7 @@ ipcMain.handle('md:imprimir', async (event, payload) => {
     const target = payload && payload.target || 'all';
     if (!['all', 'kitchen', 'cashier'].includes(target)) throw new Error('Destino de impressão inválido.');
     const forceKitchenCompact = payload && payload.forceKitchenCompact === true;
-    return await printing.print(bytes, printerName, { restaurantSlug, target, forceKitchenCompact, itemSpans:payload.itemSpans,orderId:payload.orderId,report:payload.report===true });
+    return await printing.print(bytes, printerName, { restaurantSlug, target, forceKitchenCompact, orderChannel:payload.orderChannel, itemSpans:payload.itemSpans,orderId:payload.orderId,report:payload.report===true });
   } catch (e) {
     return { ok: false, motivo: e && e.message ? e.message : String(e) };
   }

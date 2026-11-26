@@ -21,7 +21,7 @@ try {
 contextBridge.exposeInMainWorld('myDeliveryDesktop', {
   isDesktop: true,
   platform: process.platform, // 'win32' | 'darwin'
-  versao: '1.0.54',
+  versao: '1.0.55',
   impressoraFiscalAtiva: async () => !!(await ipcRenderer.invoke('md:fiscal-estado')),
   imprimirNotaFiscal: manualFiscal,
   impressaoCozinhaSomente: true,
@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('myDeliveryDesktop', {
       restaurantSlug: context && context.restaurantSlug,
       target: context && context.target,
       forceKitchenCompact: context && context.forceKitchenCompact === true,
-      itemSpans:context?.itemSpans, orderId:context?.orderId, report:context?.report===true
+      orderChannel:context?.orderChannel, itemSpans:context?.itemSpans, orderId:context?.orderId, report:context?.report===true
     }),
 
   testarImpressao: () => ipcRenderer.invoke('md:config-impressora', 'test'),

@@ -26,14 +26,14 @@ app.whenReady().then(async () => {
   }
   assert.equal(await ui.webContents.executeJavaScript('document.querySelector("#virtual-note").hidden'), false);
   fs.writeFileSync(path.join(output,'onenote-settings.png'), (await ui.webContents.capturePage()).toPNG());
-  await ui.webContents.executeJavaScript('document.querySelector("#printer").value="EPSON TM-T20"; document.querySelector("#printer").dispatchEvent(new Event("change")); document.querySelector("#kitchen").value="OneNote (Desktop)"; document.querySelector("#kitchen").dispatchEvent(new Event("change")); document.querySelector("#kitchen-width").value="58"; document.querySelector("#save").click()');
+  await ui.webContents.executeJavaScript('document.querySelector("#setup-kind").value="pair";document.querySelector("#setup-kind").dispatchEvent(new Event("change"));document.querySelector("#printer").value="EPSON TM-T20"; document.querySelector("#printer").dispatchEvent(new Event("change")); document.querySelector("#kitchen").value="OneNote (Desktop)"; document.querySelector("#kitchen").dispatchEvent(new Event("change")); document.querySelector("#kitchen-width").value="58"; document.querySelector("#save").click()');
   await new Promise(resolve=>setTimeout(resolve,100));
   assert.equal(settings.printerName,'EPSON TM-T20');
   assert.equal(settings.kitchen.printerName,'OneNote (Desktop)');
   assert.equal(settings.kitchen.width,58);
   assert.match(await ui.webContents.executeJavaScript('document.querySelector("#status").textContent'), /salva/);
   fs.writeFileSync(path.join(output,'printer-settings.png'), (await ui.webContents.capturePage()).toPNG());
-  await ui.webContents.executeJavaScript('document.querySelector("#station-on").click(); document.querySelector("#station-preset").click(); document.querySelector("#save").click()');
+  await ui.webContents.executeJavaScript('document.querySelector("#setup-kind").value="sectors";document.querySelector("#setup-kind").dispatchEvent(new Event("change")); document.querySelector("#station-preset").click(); document.querySelector("#save").click()');
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.deepEqual(settings.routingUpdate.rules.categories,{'1':'PIZZARIA','2':'COZINHA','3':'BAR'});
   assert.equal(settings.fiscal.printerName,'CAIXA');
