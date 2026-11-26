@@ -31,6 +31,20 @@ jobs:
         run: npx electron test/print-render-smoke.cjs
       - name: Validar NFC-e automática e tamanho do papel
         run: npx electron test/fiscal-smoke.cjs
+      - name: Preparar compilador do instalador Windows
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'nsis-bundle.tar.gz'
+          Invoke-WebRequest 'https://github.com/electron-userland/electron-builder-binaries/releases/download/nsis%402.0.4/nsis-bundle-3.13.tar.gz' -OutFile $archive
+          if ((Get-FileHash $archive).Hash -ne 'c18e9ad9684cf4c5bbd7b768cbf1b056d40771d7bd9ae1b513346452decf89d2') { throw 'Download NSIS inválido' }
+          tar -xzf $archive -C $env:RUNNER_TEMP
+          if ($LASTEXITCODE) { throw 'Falha ao extrair o compilador NSIS' }
+          $bundle = Join-Path $env:RUNNER_TEMP 'nsis-bundle'
+          $win = Join-Path $bundle 'windows'
+          # electron-builder 24 expects these two files relative to its NSIS directory.
+          Copy-Item "$win/makensis.exe" "$win/Bin/makensis.exe"
+          Copy-Item "$bundle/elevate.exe" "$win/elevate.exe"
+          "ELECTRON_BUILDER_NSIS_DIR=$win" >> $env:GITHUB_ENV
       - name: Build + publicar (Windows)
         run: npm run dist:win
         env:
