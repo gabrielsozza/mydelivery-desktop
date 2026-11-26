@@ -483,7 +483,7 @@ test('mixed ticket retains only assigned items and modifiers at each station, wi
   const rules={categories:{1:'PIZZARIA',2:'COZINHA',3:'BAR'},products:{2:'COZINHA'},external:{'pizza especial':'PIZZARIA'},
     byName:namedProducts([{id:6,categoriaId:3,nome:'Suco'}]),fallback:''};
   await f.service.save({printerName:'PIZZARIA',mode:'auto',width:80,fiscal:{printerName:'CAIXA',width:80},routingUpdate:{slug:'maria-massas',rules}});
-  let bytes='PEDIDO BALCAO\nPedido 123\nCliente\nTipo: Pedido balcao\nNome: Teste\n--------------------------------\nItens\n'; const itemSpans=[];
+  let bytes='CODIGO DE COLETA IFOOD\n1234\nDELIVERY\nPedido 123\nCliente\nEntrega: Rua Um, 12\nNome: Teste\n--------------------------------\nItens\n'; const itemSpans=[];
   function item(name,productId,categoryId,extra){
     const start=bytes.length;bytes+='(1) '+name+' R$ 9,00\n'+(extra?'+ '+extra+'\n':'');
     itemSpans.push({name,productId,categoryId,start,end:bytes.length});
@@ -493,10 +493,12 @@ test('mixed ticket retains only assigned items and modifiers at each station, wi
   await f.service.print(Buffer.from(bytes+'Pagamento\nTotal: R$ 45,00\n'),null,ctx);
   assert.deepEqual(f.raw.map(job=>job[1]),['PIZZARIA','COZINHA','BAR']);
   const [pizza,kitchen,bar]=f.raw.map(job=>visibleRows(job[0]).join('\n'));
-  assert.match(pizza,/SETOR: PIZZARIA/);assert.match(pizza,/PEDIDO BALCAO/);assert.match(pizza,/R\$ 9,00/);
+  assert.match(pizza,/SETOR: PIZZARIA/);assert.match(pizza,/DELIVERY/);assert.match(pizza,/R\$ 9,00/);
   assert.equal(pizza.split('Pizza especial').length,2);assert.doesNotMatch(pizza,/Nome:|Tipo: Pedido balcao/);
   assert.match(pizza,/sem cebola/);assert.doesNotMatch(pizza,/Prato|Sobremesa|Suco|Entrada|gelo|45,00/);
-  assert.match(kitchen,/Entrada/);assert.match(kitchen,/Prato/);assert.match(kitchen,/Sobremesa/);assert.doesNotMatch(kitchen,/Suco|Pizza|gelo|45,00/);
+  assert.match(kitchen,/Entrada/);assert.match(kitchen,/Prato/);assert.match(kitchen,/Sobremesa/);assert.doesNotMatch(kitchen,/Suco|Pizza|gelo/);
+  assert.match(kitchen,/Entrega: Rua Um, 12/);assert.match(kitchen,/45,00/);
+  assert.doesNotMatch(pizza+bar,/Entrega: Rua Um|Nome: Teste/);
   assert.match(bar,/sem gelo/);assert.doesNotMatch(bar,/Prato|Pizza|Sobremesa|45,00/);
   await f.service.print(Buffer.from(bytes.slice(0,itemSpans[0].end)),null,{...ctx,itemSpans:itemSpans.slice(0,1)});
   assert.equal(f.raw.length,4);assert.equal(f.raw[3][1],'PIZZARIA');
@@ -504,6 +506,15 @@ test('mixed ticket retains only assigned items and modifiers at each station, wi
   await f.service.test('CAIXA',true);
   assert.equal(f.raw.length,5);assert.equal(f.raw[4][1],'CAIXA');
   assert.ok(f.raw[4][0].length<48);
+  const saved=f.service.settings();
+  const updated={...saved.routes['maria-massas'],receipts:{COZINHA:'kitchen',BAR:'full'}};
+  await f.service.save({...saved,routingUpdate:{slug:'maria-massas',rules:updated}});
+  const reopened=createPrintingService(f.options);
+  await reopened.print(Buffer.from(bytes+'Pagamento\nTotal: R$ 45,00\n'),null,ctx);
+  const [,,fullBar]=f.raw.slice(-3).map(job=>visibleRows(job[0]).join('\n'));
+  assert.match(fullBar,/Entrega: Rua Um, 12/);assert.match(fullBar,/45,00/);
+  assert.doesNotMatch(fullBar,/Pizza especial|Sobremesa/);
+  assert.doesNotMatch(f.raw.at(-2)[0].toString('ascii'),/Entrega: Rua Um|45,00/);
 });
 
 test('station tickets feed to the blade once; driver pages omit transport-only whitespace', () => {
@@ -516,4 +527,20 @@ test('station tickets feed to the blade once; driver pages omit transport-only w
   const padded=Buffer.concat([Buffer.from('\n\n'),order,Buffer.from('\n\n\n\n\n\n')]);
   assert.equal(receiptDocument(order),receiptDocument(padded));
   assert.match(receiptDocument(Buffer.from('Mesa 1\n\nItens\n')),/<div class="line"><br><\/div>/);
+});
+
+test('individual receipt content also applies without station routing', async t => {
+  const f = setup(t);
+  f.setPrinters([{name:'Principal'},{name:'Cozinha'}]);
+  await f.service.save({
+    printerName:'Principal', mode:'driver', width:80, mainReceipt:'kitchen',
+    kitchen:{printerName:'Cozinha',width:58,mode:'driver',receipt:'full'}
+  });
+  const reopened = createPrintingService(f.options);
+  await reopened.print(kitchenOrder());
+  assert.doesNotMatch(f.windows[0].html,/Nome:|Subtotal:/);
+  assert.match(f.windows[1].html,/Nome:/);
+  assert.match(f.windows[1].html,/Subtotal:/);
+  await reopened.print(kitchenOrder(),null,{target:'cashier',report:true});
+  assert.match(f.windows[2].html,/Subtotal:/);
 });

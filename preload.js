@@ -21,7 +21,7 @@ try {
 contextBridge.exposeInMainWorld('myDeliveryDesktop', {
   isDesktop: true,
   platform: process.platform, // 'win32' | 'darwin'
-  versao: '1.0.48',
+  versao: '1.0.54',
   impressoraFiscalAtiva: async () => !!(await ipcRenderer.invoke('md:fiscal-estado')),
   imprimirNotaFiscal: manualFiscal,
   impressaoCozinhaSomente: true,

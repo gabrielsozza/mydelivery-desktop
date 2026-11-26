@@ -6,12 +6,14 @@
 <h1>Configurar impressora</h1><p>Escolha onde os pedidos deste computador serão impressos.</p>
 <div class="card"><label for="printer">Impressora principal dos pedidos</label><select id="printer" disabled><option>Carregando impressoras…</option></select>
 <div id="virtual-note" class="notice" hidden></div>
+<label class="copy-content" for="main-receipt">Conteúdo da comanda</label><select class="copy-content" id="main-receipt"><option value="full">Completa com endereço</option><option value="kitchen">Somente preparo</option></select>
 <label for="width">Largura do cupom</label><select id="width"><option value="80">80 mm</option><option value="58">58 mm</option></select>
 <p class="help">Na impressora térmica, use também essa largura nas preferências do driver.</p>
 <details><summary>Opções de impressão</summary><label for="mode">Como enviar o cupom</label><select id="mode"><option value="auto">Automático (cupom legível pelo driver)</option><option value="driver">Pelo driver do sistema</option><option value="raw">Térmica direta — ESC/POS</option></select><p class="help">O modo automático usa o driver da impressora para imprimir cupons com letras maiores, como no navegador. Se a impressora não aceitar esse modo, selecione Térmica direta. Configure a largura do papel e o corte nas preferências do driver.</p></details>
 <div class="section"><label for="kitchen">Também imprimir na cozinha</label><select id="kitchen"><option value="">Não enviar uma segunda cópia</option></select>
 <p class="help">Selecione uma segunda impressora se a cozinha precisar de uma cópia para preparo.</p>
 <div id="kitchen-options" hidden><label for="kitchen-width">Papel da cozinha</label><select id="kitchen-width"><option value="80">80 mm</option><option value="58">58 mm</option></select>
+<label class="copy-content" for="kitchen-receipt">Conteúdo da comanda</label><select class="copy-content" id="kitchen-receipt"><option value="auto">Padrão da cozinha</option><option value="full">Completa com endereço</option><option value="kitchen">Somente preparo</option></select>
 <label for="kitchen-mode">Impressão da cozinha</label><select id="kitchen-mode"><option value="auto">Automático (cupom legível pelo driver)</option><option value="driver">Pelo driver do sistema</option><option value="raw">Térmica direta — ESC/POS</option></select><div id="kitchen-note" class="notice" hidden></div></div></div>
 <div class="section"><label for="fiscal">Impressora exclusiva da NFC-e</label>
 <select id="fiscal"></select><p class="help">Ao selecionar, as novas NFC-e autorizadas em produção serão impressas automaticamente neste computador enquanto o painel estiver aberto.</p>
@@ -21,6 +23,10 @@
 <label class="switch-line"><input type="checkbox" id="station-on" disabled>Separar itens por impressora</label>
 <p id="station-info" role="status"></p>
 <div id="station-fields" hidden><button id="station-preset" type="button" hidden>Aplicar distribuição da Maria Massas</button>
+<section class="receipt-options" id="station-receipts" hidden aria-labelledby="receipt-heading">
+<h3 id="receipt-heading">Conteúdo da comanda por impressora</h3>
+<p>A comanda completa inclui os itens do setor, o endereço de entrega, os dados do cliente, o pagamento e o total do pedido.</p>
+<div id="receipt-rows"></div></section>
 <label for="station-search">Categorias e produtos</label><input type="search" id="station-search" placeholder="Buscar no cardápio">
 <div id="station-groups"></div>
 <label for="station-name">Adicionar nome usado em aplicativo de delivery</label><div class="station-add"><input id="station-name" type="text" maxlength="200"><button id="station-add" type="button">Adicionar</button></div>

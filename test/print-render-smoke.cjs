@@ -38,6 +38,11 @@ app.whenReady().then(async () => {
   assert.deepEqual(settings.routingUpdate.rules.categories,{'1':'PIZZARIA','2':'COZINHA','3':'BAR'});
   assert.equal(settings.fiscal.printerName,'CAIXA');
   assert.equal(settings.routingUpdate.rules.external['pizza margherita grande'],'PIZZARIA');
+  assert.equal(settings.routingUpdate.rules.receipts.COZINHA,'full');
+  assert.deepEqual(await ui.webContents.executeJavaScript("Array.from(document.querySelectorAll('#receipt-rows select'),s=>s.getAttribute('aria-label'))"),['BAR','COZINHA','PIZZARIA'].map(name=>'Conteúdo da comanda de '+name));
+  await ui.webContents.executeJavaScript(`const copy=document.querySelector('[aria-label="Conteúdo da comanda de COZINHA"]');copy.value='kitchen';copy.dispatchEvent(new Event('change'));document.querySelector('#save').click();`);
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(settings.routingUpdate.rules.receipts.COZINHA,'kitchen');
   ui.destroy();
   const receipt = new BrowserWindow({show:false,width:420,height:1200,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,javascript:true}});
   await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(require('./fixtures/receipt.json'))));

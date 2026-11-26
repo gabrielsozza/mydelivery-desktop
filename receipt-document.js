@@ -78,8 +78,8 @@ function kitchenReceipt(input, keepItemPrices = false) {
   return Buffer.concat(out);
 }
 // Routed preparation tickets keep only the prices of the selected items.
-function stationReceipt(input, printerName) {
-  const lines = receiptLines(kitchenReceipt(input, true));
+function stationReceipt(input, printerName, full = false) {
+  const lines = receiptLines(full ? input : kitchenReceipt(input, true));
   const sector = printerName.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^ -~]/g, '').trim().toUpperCase();
   const heading = Buffer.from('\x1b@\x1ba\x01\x1bE\x01SETOR: ' + sector + '\x1bE\x00\n', 'ascii');

@@ -45,11 +45,18 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     try { saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'printing.json'), 'utf8')); } catch (_) {}
     const fiscal = saved.fiscal && typeof saved.fiscal.printerName === 'string' && saved.fiscal.printerName && Number.isFinite(saved.fiscal.since)
       ? { printerName: saved.fiscal.printerName, width: saved.fiscal.width === 58 ? 58 : 80, since: saved.fiscal.since } : null;
-    return { routes: saved.routes || {}, fiscal, printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', extras: Array.isArray(saved.extras)?saved.extras.slice(0,2).filter(x=>x&&typeof x.printerName==='string'&&x.printerName).map(x=>({printerName:x.printerName,width:x.width===58?58:80,mode:['auto','driver','raw'].includes(x.mode)?x.mode:'auto',receipt:x.receipt==='full'?'full':'kitchen'})):[], kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
+    const routes = saved.routes || {};
+    const maria = routes['maria-massas'];
+    if (maria && !maria.receipts) {
+      const targets = [maria.fallback, ...Object.values(maria.categories), ...Object.values(maria.products), ...Object.values(maria.external)];
+      maria.receipts = Object.fromEntries(targets.filter(name => name?.trim().toUpperCase() === 'COZINHA').map(name => [name, 'full']));
+    }
+    return { routes, fiscal, mainReceipt: saved.mainReceipt === 'kitchen' ? 'kitchen' : 'full', printerName: typeof saved.printerName === 'string' ? saved.printerName : '', width: saved.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.mode) ? saved.mode : 'auto', extras: Array.isArray(saved.extras)?saved.extras.slice(0,2).filter(x=>x&&typeof x.printerName==='string'&&x.printerName).map(x=>({printerName:x.printerName,width:x.width===58?58:80,mode:['auto','driver','raw'].includes(x.mode)?x.mode:'auto',receipt:x.receipt==='full'?'full':'kitchen'})):[], kitchen: saved.kitchen && typeof saved.kitchen.printerName === 'string' && saved.kitchen.printerName ? { ...(saved.kitchen.receipt ? {receipt:saved.kitchen.receipt} : {}), printerName: saved.kitchen.printerName, width: saved.kitchen.width === 58 ? 58 : 80, mode: ['auto', 'driver', 'raw'].includes(saved.kitchen.mode) ? saved.kitchen.mode : 'auto' } : null };
   }
   async function list() { return getContents().getPrintersAsync(); }
   async function save(value) {
     if (!value || typeof value.printerName !== 'string' || ![58, 80].includes(value.width) || !['auto', 'driver', 'raw'].includes(value.mode)) throw new Error('Configuração de impressão inválida.');
+    if (value.mainReceipt && !['full','kitchen'].includes(value.mainReceipt)) throw Error('Escolha o conteúdo da comanda principal.');
     const printer = selectPrinter(await list(), value.printerName);
     if (value.mode === 'raw' && isVirtual(printer.name)) throw new Error('Para OneNote, PDF ou outra impressora virtual, selecione “Pelo driver do sistema”.');
     let kitchen = null;
@@ -58,7 +65,8 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       if (typeof k.printerName !== 'string' || !k.printerName || ![58, 80].includes(k.width) || !['auto', 'driver', 'raw'].includes(k.mode)) throw new Error('Configuração da cozinha inválida.');
       const destination = selectPrinter(await list(), k.printerName);
       if (k.mode === 'raw' && isVirtual(destination.name)) throw new Error('Na cozinha, selecione o driver do sistema para impressoras virtuais.');
-      kitchen = { printerName: k.printerName, width: k.width, mode: k.mode };
+      if (k.receipt && !['full','kitchen','auto'].includes(k.receipt)) throw Error('Escolha o conteúdo da comanda da cozinha.');
+      kitchen = { ...(['full','kitchen'].includes(k.receipt) ? {receipt:k.receipt} : {}), printerName: k.printerName, width: k.width, mode: k.mode };
     }
     const extras = value.extras === undefined ? settings().extras : value.extras;
     if(!Array.isArray(extras)||extras.length>2)throw new Error('Configure no máximo quatro impressoras.');
@@ -93,7 +101,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     }
     const file = path.join(app.getPath('userData'), 'printing.json');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file + '.tmp', JSON.stringify({ printerName: value.printerName, width: value.width, mode: value.mode, kitchen, extras, fiscal, routes }));
+    fs.writeFileSync(file + '.tmp', JSON.stringify({ mainReceipt: value.mainReceipt ?? settings().mainReceipt, printerName: value.printerName, width: value.width, mode: value.mode, kitchen, extras, fiscal, routes }));
     fs.renameSync(file + '.tmp', file);
     return settings();
   }
@@ -102,8 +110,8 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     const fullKitchen = context && context.restaurantSlug === 'talentos-pizzas'
       && context.forceKitchenCompact !== true;
     const testReceipt = context && context.testReceipt === true;
-    if (config.station) bytes = stationReceipt(bytes, printer.name);
-    else if (!testReceipt && (config.label === 'Cozinha'||config.receipt==='kitchen') && !fullKitchen) bytes = kitchenReceipt(bytes);
+    if (config.station) bytes = stationReceipt(bytes, printer.name, config.receipt === 'full');
+    else if (!testReceipt && !context?.report && (config.receipt === 'kitchen' || (!config.receipt && config.label === 'Cozinha' && !fullKitchen))) bytes = kitchenReceipt(bytes);
     // The automatic path uses the same large, readable document layout as the
     // browser. Native ESC/POS remains an explicit choice for devices whose
     // driver cannot print a receipt document.
@@ -173,7 +181,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       targets = Array.from(routed, ([printerName, ticket]) => {
         const device = configs.find(c => c.printerName === printerName);
         return {printerName, width:device?.width || 80, mode:device?.mode || 'auto',
-          label:printerName, receipt:'kitchen', station:context.restaurantSlug === 'maria-massas', ticket:orderWithoutInvoice(ticket)};
+          label:printerName, receipt:rules.receipts?.[printerName] === 'full' ? 'full' : 'kitchen', station:context.restaurantSlug === 'maria-massas', ticket:orderWithoutInvoice(ticket)};
       });
       context={...context,forceKitchenCompact:true};
     } else if (targetMode === 'kitchen') {
@@ -186,7 +194,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       targets = [{ ...config, label: 'Caixa' }];
     } else {
       const explicitKitchen = explicitName && config.kitchen && explicitName === config.kitchen.printerName && explicitName !== config.printerName;
-      targets = [{ ...(explicitKitchen ? config.kitchen : config), printerName: explicitName || config.printerName, label: explicitKitchen ? 'Cozinha' : 'Caixa' }];
+      targets = [{ ...(explicitKitchen ? config.kitchen : {...config,receipt:config.mainReceipt}), printerName: explicitName || config.printerName, label: explicitKitchen ? 'Cozinha' : 'Caixa' }];
       if (!explicitName && config.kitchen) targets.push({ ...config.kitchen, label: 'Cozinha' });
       if(!explicitName)config.extras.forEach((extra,index)=>targets.push({...extra,label:'Impressora '+(index+3)}));
       if(explicitName){const extra=config.extras.find(x=>x.printerName===explicitName);if(extra)targets[0]={...extra,label:'Impressora adicional'};}

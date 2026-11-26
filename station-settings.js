@@ -15,16 +15,35 @@ const stationEditor=(()=>{
     field.add(new Option(empty,''));
     for (const p of eligible()) field.add(new Option(p.displayName || p.name,p.name));
     if (current && !eligible().some(p=>p.name===current)) field.add(new Option(current+' (indisponível)',current));
-    field.value=current||''; field.onchange=()=>change(field.value);return field;
+    field.value=current||''; field.onchange=()=>{change(field.value);renderReceipts();};return field;
   }
   function binding(key,id){return value=>{if (value) rules[key][id]=value;else delete rules[key][id];};}
   function row(text,select){
     const r=el('div',null,'station-row');r.append(el('span',text),select);return r;
   }
+  function renderReceipts(){
+    const rows = $('receipt-rows');
+    rows.replaceChildren();
+    const targets = new Set([rules.fallback, ...Object.values(rules.categories), ...Object.values(rules.products), ...Object.values(rules.external)]);
+    targets.delete('');
+    targets.delete($('fiscal').value);
+    $('station-receipts').hidden = !targets.size;
+    for (const name of [...targets].sort((a,b)=>a.localeCompare(b,'pt-BR'))) {
+      const field = el('select');
+      field.setAttribute('aria-label','Conteúdo da comanda de '+name);
+      field.add(new Option('Somente preparo','kitchen'));
+      field.add(new Option('Completa com endereço','full'));
+      field.value = rules.receipts[name] || 'kitchen';
+      field.onchange = () => { rules.receipts[name] = field.value; };
+      rows.append(row(name,field));
+    }
+  }
   function render(){
     const enabled=$('station-on').checked;
     $('station-fields').hidden=!enabled;
+    document.body.classList.toggle('routing-on',enabled);
     if (!enabled || !catalog) return;
+    renderReceipts();
     const box=$('station-groups');box.replaceChildren();
     const fallback=destination('Destino dos itens sem regra',rules.fallback,'Solicitar configuração',v=>rules.fallback=v);
     $('station-fallback').replaceChildren(fallback);
@@ -75,6 +94,7 @@ const stationEditor=(()=>{
       else if (importedKitchen.some(n=>norm(n)===key)) rules.external[key]=byName('cozinha');
       else if (importedBar.some(n=>norm(n)===key)) rules.external[key]=byName('bar');
     }
+    rules.receipts[byName('cozinha')] ??= 'full';
     $('fiscal').value=byName('caixa');$('printer').value=byName('pizzaria');$('printer').dispatchEvent(new Event('change'));
     render();$('station-info').textContent='Distribuição preenchida. Confira os produtos e clique em Salvar.';
   }
@@ -87,7 +107,7 @@ const stationEditor=(()=>{
       if (current!==generation) return;
       if (!result.ok || !result.catalog) throw Error(result.motivo || 'Abra o painel da loja para carregar o cardápio.');
       catalog=result.catalog;const saved=stored[catalog.slug];
-      rules={categories:{...saved?.categories},products:{...saved?.products},external:{...saved?.external},fallback:saved?.fallback||''};
+      rules={receipts:Object.assign(Object.create(null),saved?.receipts),categories:{...saved?.categories},products:{...saved?.products},external:{...saved?.external},fallback:saved?.fallback||''};
       loaded=true;$('station-on').checked=!!saved;$('station-on').disabled=false;
       $('station-info').textContent='Cada item segue primeiro a escolha do produto e depois a da categoria.';
       render();
