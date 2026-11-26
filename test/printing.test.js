@@ -81,6 +81,21 @@ test('automatic receipts for delivery, table and counter keep the readable layou
     assert.match(html,/Total:/);
   }
 });
+test('ordinary orders use the installed roll for short and long tickets on every destination', async t => {
+  const f = setup(t);
+  f.setPrinters([{name:'Caixa',isDefault:true},{name:'Cozinha'}]);
+  await f.service.save({printerName:'Caixa',width:80,mode:'auto',kitchen:{printerName:'Cozinha',width:58,mode:'driver'}});
+  for (const count of [1, 30]) {
+    const receipt = Buffer.from('DELIVERY\nSuper pastel\nPedido 21316\nItens\n' + '(1) Pastel R$ 8,00\n'.repeat(count) + 'Total: R$ ' + count*8 + ',00\n');
+    await f.service.print(receipt, null, {restaurantSlug:'super-pastel', orderId:21316});
+  }
+  assert.deepEqual(f.jobs.map(j => j.deviceName), ['Caixa','Cozinha','Caixa','Cozinha']);
+  for (const job of f.jobs) {
+    assert.equal(job.pageSize, undefined);
+    assert.equal(job.pageRanges, undefined);
+    assert.deepEqual(job.margins, {marginType:'none'});
+  }
+});
 test('strong thermal text preserves complete fiscal image data and does not double character width', () => {
   const raster=Buffer.from([29,118,48,0,1,0,6,0,27,69,0,27,33,0]);
   const result=thermalReceipt(Buffer.concat([sample,raster]));

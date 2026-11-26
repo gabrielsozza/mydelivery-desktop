@@ -138,7 +138,9 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     try {
       try { await printWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)); }
       catch (_) { throw new Error('Não foi possível preparar o cupom para impressão.'); }
-      if (!testReceipt) {
+      // A custom form can be centered on a larger sheet by Windows POS drivers.
+      // Only routed stations with a content-sized profile opt into that form.
+      if (config.station && !testReceipt) {
         const height = (await measuredBox(printWindow.webContents,'body')).height;
         if (!Number.isFinite(height) || height <= 0) throw Error('Não foi possível medir o cupom.');
         testOptions.pageSize = {width:config.width*1000,height:Math.min(500000,Math.ceil(height*25400/96)+1000)};
