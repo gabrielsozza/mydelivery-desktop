@@ -42,7 +42,7 @@ function isAddress(text) {
 // section boundaries before either driver rendering or thermal line wrapping,
 // so multiline customer/payment values cannot leak into the kitchen copy.
 // Item notes are deliberately not searched for words such as "Cliente".
-function kitchenReceipt(input) {
+function kitchenReceipt(input, keepItemPrices = false) {
   const out = [];
   let section = '';
   for (const line of receiptLines(input)) {
@@ -67,7 +67,7 @@ function kitchenReceipt(input) {
       if (/^(?:Subtotal|Desconto|Taxa de entrega|Servico \(10%\)|Total|Troco(?: para)?):|^\s*-?\s*R\$\s*[\d.,]+\s*$/.test(text)) continue;
       section = '';
     }
-    if (section === 'items' && !line.image) {
+    if (section === 'items' && !line.image && !keepItemPrices) {
       if (/^[-=]{8,}$/.test(text)) section = '';
       // Old receipts put long-item amounts on their own next line.
       if (/^\s*-?\s*R\$\s*-?[\d.,]+\s*$/.test(text)) continue;
@@ -76,6 +76,22 @@ function kitchenReceipt(input) {
     } else out.push(line.raw);
   }
   return Buffer.concat(out);
+}
+// Routed preparation tickets keep only the prices of the selected items.
+function stationReceipt(input, printerName) {
+  const lines = receiptLines(kitchenReceipt(input, true));
+  const sector = printerName.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^ -~]/g, '').trim().toUpperCase();
+  const heading = Buffer.from('\x1b@\x1ba\x01\x1bE\x01SETOR: ' + sector + '\x1bE\x00\n', 'ascii');
+  const hasCounterHeading = lines.some(line => line.text === 'PEDIDO BALCAO');
+  const hasTableNumber = lines.some(line => /^Mesa:\s*\S/i.test(line.text));
+  const body = lines.filter(line => {
+    if (line.text === 'Powered By: MyDelivery') return false;
+    if (hasCounterHeading && line.text === 'Tipo: Pedido balcao') return false;
+    if (hasTableNumber && line.text === 'MESA') return false;
+    return true;
+  });
+  return Buffer.concat([heading, ...body.map(line => line.raw)]);
 }
 function isHeading(text) {
   return /^(?:Cliente|Itens|Pagamento|Observacoes|PARA ENTREGA|DELIVERY|RETIRADA NO LOCAL|PEDIDO BALCAO|Pedido\s+#?\d+)$/i.test(text.trim());
@@ -168,7 +184,7 @@ function layoutReceipt(input, width = 80, forDriver = false) {
 
 // Converts the ESC/POS subset emitted by MyDelivery into an inert document for
 // the OS driver. Keep the same receipt content, including fiscal raster QR codes.
-function receiptDocument(input, width = 80) {
+function receiptDocument(input, width = 80, station = false) {
   const bytes = layoutReceipt(input, width, true);
   if (!bytes.length || bytes.length > 2 * 1024 * 1024) throw new Error('Cupom vazio ou grande demais.');
   width = width === 58 ? 58 : 80;
@@ -204,7 +220,7 @@ function receiptDocument(input, width = 80) {
     const usablePx = (printableWidth - sidePadding * 2) * 96 / 25.4;
     const address = isAddress(plain);
     const customer = /^(?:Nome|Telefone|Fone|Obs|Observacao|Referencia|Forma de Pagamento):/i.test(plain);
-    const heading = width === 80 && isHeading(plain);
+    const heading = (width === 80 && isHeading(plain)) || (station && /^(?:SETOR:|Mesa:|PEDIDO CANCELADO)/i.test(plain));
     // Addresses may flow onto another line; never shrink a long street to tiny text.
     // The browser wraps long text instead of shrinking it to unreadable type.
     const scale = width === 80 || preparationRow || address || customer || heading || item ? 1 : Math.min(1, usablePx / Math.max(1, units * 7.6));
@@ -267,13 +283,13 @@ function receiptDocument(input, width = 80) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{size:auto;margin:3mm}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:Arial,'Segoe UI',Helvetica,sans-serif;font-size:${baseFont}px;font-weight:700;line-height:1.35}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.35em}.heading{line-height:1.25;padding:4px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{flex:1;min-width:0;white-space:normal;overflow-wrap:break-word}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.amount-row.stacked{flex-direction:column;gap:0}.amount-row.stacked>span:last-child{align-self:flex-end}.preparation{white-space:normal;overflow-wrap:break-word;line-height:1.45;padding:2px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:1px solid black;margin:6px 0}svg{break-inside:avoid}</style></head><body data-paper-width="${width}">${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{size:auto;margin:3mm}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:Arial,'Segoe UI',Helvetica,sans-serif;font-size:${baseFont}px;font-weight:700;line-height:1.35}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.35em}.heading{line-height:1.25;padding:4px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{flex:1;min-width:0;white-space:normal;overflow-wrap:break-word}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.amount-row.stacked{flex-direction:column;gap:0}.amount-row.stacked>span:last-child{align-self:flex-end}.preparation{white-space:normal;overflow-wrap:break-word;line-height:1.45;padding:2px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:1px solid black;margin:6px 0}svg{break-inside:avoid}${station ? '.line span{-webkit-text-stroke:0!important}.preparation{padding:3px 0}' : ''}</style></head><body data-paper-width="${width}">${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use
 // emphasis for body text plus double-strike for headings, rather than doubling
 // every character. Raster data (including fiscal QR) must remain byte-identical.
-function thermalReceipt(input, width = 80) {
+function thermalReceipt(input, width = 80, station = false) {
   let bytes = layoutReceipt(input, width);
   // Addresses are ordinary printer text, just like name and phone. Native text
   // also wraps at the physical head width, unlike a wide raster that gets cut.
@@ -291,9 +307,9 @@ function thermalReceipt(input, width = 80) {
     while (line.raw[start] === 27) start += line.raw[start + 1] === 64 ? 2 : 3;
     return Buffer.concat([line.raw.subarray(0,start),Buffer.from('\x1ba\0\x1b!\0\x1bE\0' + rows.join('\n') + '\n','ascii')]);
   }));
-  if (width === 80) {
+  if (width === 80 || station) {
     bytes = Buffer.concat(receiptLines(bytes).map(line => {
-      if (line.image || !isHeading(line.text)) return line.raw;
+      if (line.image || !(isHeading(line.text) || (station && /^(?:SETOR:|Mesa:|PEDIDO CANCELADO)/i.test(line.text)))) return line.raw;
       // Double height only: retain native column width and all original commands.
       let start = 0;
       while (line.raw[start] === 27) start += line.raw[start + 1] === 64 ? 2 : 3;
@@ -312,9 +328,11 @@ function thermalReceipt(input, width = 80) {
     } else if (bytes[i] === 27 && bytes[i + 1] === 64) {
       out.push(27, 64, 27, 69, 1); i += 2;
     } else if (bytes[i] === 27 && bytes[i + 1] === 69 && i + 2 < bytes.length) {
-      out.push(27, 69, 1, 27, 71, bytes[i + 2] & 1); i += 3;
+      if (station) out.push(27, 69, bytes[i + 2] & 1);
+      else out.push(27, 69, 1, 27, 71, bytes[i + 2] & 1);
+      i += 3;
     } else if (bytes[i] === 27 && bytes[i + 1] === 33 && i + 2 < bytes.length) {
-      out.push(27, 33, bytes[i + 2] | 8); i += 3;
+      out.push(27, 33, station ? bytes[i + 2] : bytes[i + 2] | 8); i += 3;
     } else {
       out.push(bytes[i++]);
     }
@@ -323,4 +341,4 @@ function thermalReceipt(input, width = 80) {
   return Buffer.from(out);
 }
 
-module.exports = { orderWithoutInvoice, receiptDocument, thermalReceipt, layoutReceipt, kitchenReceipt };
+module.exports = { orderWithoutInvoice, receiptDocument, thermalReceipt, layoutReceipt, kitchenReceipt, stationReceipt };

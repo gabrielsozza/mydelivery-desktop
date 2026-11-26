@@ -35,6 +35,11 @@ app.whenReady().then(async()=>{
     const html=fiscalDocument(payload.note,width);
     await paper.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent(html));
     const metrics=await measuredBox(paper.webContents,'main');
+    const expectedWidth = (width === 58 ? 48 : 68) * 96 / 25.4;
+    assert.ok(metrics.width <= Math.ceil(expectedWidth));
+    assert.ok(metrics.border[0] < 1, 'start at the printable origin');
+    const amount=await measuredBox(paper.webContents,'.row strong');
+    assert.ok(amount.border[2] <= expectedWidth, 'show the complete price inside the printable width');
     metrics.qr=(await measuredBox(paper.webContents,'svg')).width;
     assert.ok(metrics.height>50 && metrics.height<900);assert.ok(metrics.qr>110);
     const pdf=await paper.webContents.printToPDF({pageSize:{width:width/25.4,height:(Math.ceil(metrics.height*25.4/96)+4)/25.4},margins:{top:0,bottom:0,left:0,right:0}});

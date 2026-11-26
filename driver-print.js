@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
-const { orderWithoutInvoice, receiptDocument, thermalReceipt, kitchenReceipt } = require('./receipt-document');
+const { orderWithoutInvoice, receiptDocument, thermalReceipt, kitchenReceipt, stationReceipt } = require('./receipt-document');
 
 const { routeItems, validateRoutes } = require('./station-routing');
 const { fiscalDocument } = require('./fiscal-document');
@@ -102,18 +102,20 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
     const fullKitchen = context && context.restaurantSlug === 'talentos-pizzas'
       && context.forceKitchenCompact !== true;
     const testReceipt = context && context.testReceipt === true;
-    if (!testReceipt && (config.label === 'Cozinha'||config.receipt==='kitchen') && !fullKitchen) bytes = kitchenReceipt(bytes);
+    if (config.station) bytes = stationReceipt(bytes, printer.name);
+    else if (!testReceipt && (config.label === 'Cozinha'||config.receipt==='kitchen') && !fullKitchen) bytes = kitchenReceipt(bytes);
     // The automatic path uses the same large, readable document layout as the
     // browser. Native ESC/POS remains an explicit choice for devices whose
     // driver cannot print a receipt document.
-    if (config.mode === 'raw' && !isVirtual(printer.name)) {
-      await rawPrint(testReceipt ? testBytes : thermalReceipt(bytes, config.width), printer.name);
+    const nativeStation = config.station && config.mode === 'auto';
+    if ((config.mode === 'raw' || nativeStation) && !isVirtual(printer.name)) {
+      await rawPrint(testReceipt ? testBytes : thermalReceipt(bytes, config.width, config.station), printer.name);
       return { ok: true, printerName: printer.name, via: 'raw' };
     }
     // OneNote uses the regular driver path, never the thermal RAW spooler.
     const html = testReceipt
       ? `<!doctype html><meta charset="utf-8"><title>Teste MyDelivery</title><style>@page{size:${config.width}mm ${testHeightMm}mm;margin:0}body{margin:4mm;text-align:center;font:12pt/1.4 Arial,sans-serif}</style><b>MyDelivery</b><br>Teste de impressão`
-      : receiptDocument(bytes, config.width);
+      : receiptDocument(bytes, config.width, config.station);
     const testOptions = testReceipt ? {
       pageSize: { width: config.width * 1000, height: testHeightMm * 1000 },
       pageRanges: [{ from: 0, to: 0 }]
@@ -171,7 +173,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       targets = Array.from(routed, ([printerName, ticket]) => {
         const device = configs.find(c => c.printerName === printerName);
         return {printerName, width:device?.width || 80, mode:device?.mode || 'auto',
-          label:printerName, receipt:'kitchen', ticket:orderWithoutInvoice(ticket)};
+          label:printerName, receipt:'kitchen', station:context.restaurantSlug === 'maria-massas', ticket:orderWithoutInvoice(ticket)};
       });
       context={...context,forceKitchenCompact:true};
     } else if (targetMode === 'kitchen') {
