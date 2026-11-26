@@ -505,3 +505,15 @@ test('mixed ticket retains only assigned items and modifiers at each station, wi
   assert.equal(f.raw.length,5);assert.equal(f.raw[4][1],'CAIXA');
   assert.ok(f.raw[4][0].length<48);
 });
+
+test('station tickets feed to the blade once; driver pages omit transport-only whitespace', () => {
+  const {stationReceipt}=require('../receipt-document');
+  const order=Buffer.from('Pedido 8\nItens\n(1) Pizza R$ 25,00\n  + Manjericao\n');
+  const cut=stationReceipt(Buffer.concat([order,Buffer.from('\x1ba\0\n\n\n\n\n\n\x1dV\x01')]),'Pizzaria');
+  assert.ok(cut.subarray(-5).equals(Buffer.from('\n\x1dVB\0')));
+  assert.doesNotMatch(cut.toString('ascii'),/\n\n/);
+  assert.ok(!stationReceipt(order,'Pizzaria').includes(Buffer.from([29,86])));
+  const padded=Buffer.concat([Buffer.from('\n\n'),order,Buffer.from('\n\n\n\n\n\n')]);
+  assert.equal(receiptDocument(order),receiptDocument(padded));
+  assert.match(receiptDocument(Buffer.from('Mesa 1\n\nItens\n')),/<div class="line"><br><\/div>/);
+});

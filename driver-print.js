@@ -127,7 +127,7 @@ function createPrintingService({ app, BrowserWindow, rawPrint, getContents }) {
       if (!testReceipt) {
         const height = (await measuredBox(printWindow.webContents,'body')).height;
         if (!Number.isFinite(height) || height <= 0) throw Error('Não foi possível medir o cupom.');
-        testOptions.pageSize = {width:config.width*1000,height:Math.max(40000,Math.min(500000,Math.ceil(height*25400/96)+6500))};
+        testOptions.pageSize = {width:config.width*1000,height:Math.min(500000,Math.ceil(height*25400/96)+1000)};
       }
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('O driver não confirmou o envio. Confira a fila da impressora antes de tentar novamente.')), 45000);

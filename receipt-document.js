@@ -91,6 +91,14 @@ function stationReceipt(input, printerName) {
     if (hasTableNumber && line.text === 'MESA') return false;
     return true;
   });
+  // When the caller requested an automatic cut, let the printer advance
+  // precisely to its blade. The web receipt also includes six legacy feeds.
+  const last = body[body.length - 1];
+  if (last && !last.image && last.raw.equals(Buffer.from([29, 86, 1]))) {
+    body.pop();
+    while (body.length && !body[body.length - 1].image && !body[body.length - 1].text.trim()) body.pop();
+    return Buffer.concat([heading, ...body.map(line => line.raw), Buffer.from([29, 86, 66, 0])]);
+  }
   return Buffer.concat([heading, ...body.map(line => line.raw)]);
 }
 function isHeading(text) {
@@ -193,6 +201,11 @@ function receiptDocument(input, width = 80, station = false) {
   const baseFont = width === 80 ? 15 : 12.5;
   let preparation = false;
   let align = 'left', bold = false, size = 0, line = '', text = '', output = '', units = 0;
+  let pendingBlankLines = 0;
+  function appendSpacing() {
+    if (output && pendingBlankLines) output += '<div class="line"><br></div>'.repeat(pendingBlankLines);
+    pendingBlankLines = 0;
+  }
   const escape = value => value.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   function flushText() {
     if (!text) return;
@@ -204,6 +217,12 @@ function receiptDocument(input, width = 80, station = false) {
     flushText();
     // Separators should fill the paper, not wrap into two lines on 58 mm rolls.
     const plain = line.replace(/<[^>]*>/g, '');
+    if (!plain.trim()) {
+      pendingBlankLines++;
+      line = ''; units = 0;
+      return;
+    }
+    appendSpacing();
     if (/^[-=]{8,}$/.test(plain) || /^(?:Cliente|Pagamento|Observacoes|Powered By:)/.test(plain)) preparation = false;
     if (plain === 'Itens' || /^\(\d+(?:[.,]\d+)?\)\s/.test(plain)) preparation = true;
     const preparationRow = preparation && plain !== 'Itens';
@@ -270,6 +289,7 @@ function receiptDocument(input, width = 80, station = false) {
       if (!stride || !height || stride * height > 256 * 1024) throw new Error('Imagem de cupom inválida.');
       need(i, stride * height);
       if (line || text) flushLine();
+      appendSpacing();
       let pixels = '';
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < stride * 8; x++) {
@@ -283,7 +303,7 @@ function receiptDocument(input, width = 80, station = false) {
     text += String.fromCharCode(b);
   }
   if (text || line) flushLine();
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{size:auto;margin:3mm}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:3mm ${sidePadding}mm;font-family:Arial,'Segoe UI',Helvetica,sans-serif;font-size:${baseFont}px;font-weight:700;line-height:1.35}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.35em}.heading{line-height:1.25;padding:4px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{flex:1;min-width:0;white-space:normal;overflow-wrap:break-word}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.amount-row.stacked{flex-direction:column;gap:0}.amount-row.stacked>span:last-child{align-self:flex-end}.preparation{white-space:normal;overflow-wrap:break-word;line-height:1.45;padding:2px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:1px solid black;margin:6px 0}svg{break-inside:avoid}${station ? '.line span{-webkit-text-stroke:0!important}.preparation{padding:3px 0}' : ''}</style></head><body data-paper-width="${width}">${output}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Cupom MyDelivery</title><style>@page{size:auto;margin:0}*{box-sizing:border-box}html,body{margin:0;background:white;color:black}body{width:${printableWidth}mm;max-width:100%;padding:1mm ${sidePadding}mm;font-family:Arial,'Segoe UI',Helvetica,sans-serif;font-size:${baseFont}px;font-weight:700;line-height:1.35}.line{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.35em}.heading{line-height:1.25;padding:4px 0}.amount-row{gap:4px;width:calc(100% - ${width === 58 ? 3 : 6}mm)}.amount-row>span:first-child{flex:1;min-width:0;white-space:normal;overflow-wrap:break-word}.amount-row>span:last-child{flex-shrink:0;white-space:nowrap}.amount-row.stacked{flex-direction:column;gap:0}.amount-row.stacked>span:last-child{align-self:flex-end}.preparation{white-space:normal;overflow-wrap:break-word;line-height:1.45;padding:2px 0}.customer{white-space:normal;overflow-wrap:anywhere}.address{white-space:normal;overflow-wrap:anywhere;line-height:1.25;padding:0}.separator{border-top:1px solid black;margin:6px 0}svg{break-inside:avoid}${station ? '.line span{-webkit-text-stroke:0!important}.preparation{padding:3px 0}' : ''}</style></head><body data-paper-width="${width}">${output}</body></html>`;
 }
 
 // Native thermal fonts have discrete sizes. Keep their column width and use

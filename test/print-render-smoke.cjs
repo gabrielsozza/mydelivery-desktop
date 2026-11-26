@@ -118,6 +118,19 @@ app.whenReady().then(async () => {
     assert.ok(itemFonts.length > 0 && itemFonts.every(size=>width === 58 ? size === '12.5px' : ['15px','16px'].includes(size)));
     fs.writeFileSync(path.join(output,`kitchen-${width}mm.png`),(await receipt.webContents.capturePage()).toPNG());
   }
+  for (const width of [58,80]) {
+    let shortHeight;
+    for (const count of [1,12]) {
+      const bytes = Buffer.from('SETOR: PIZZARIA\nPedido 1\nMesa: 01\nItens\n' + '(1) Pizza Broto R$ 56,00\n  + Nova York\n'.repeat(count) + '\n\n\n\n\n\n\x1dV\x01');
+      await receipt.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(receiptDocument(bytes,width,true)));
+      const bounds = await receipt.webContents.executeJavaScript('({height:document.body.getBoundingClientRect().height,top:document.body.firstElementChild.getBoundingClientRect().top,last:document.body.lastElementChild.textContent})');
+      assert.ok(bounds.top <= 5 && bounds.last.includes('Nova York'));
+      if (count === 1) shortHeight = bounds.height;
+      else assert.ok(bounds.height > shortHeight * 2);
+      const pdf = await receipt.webContents.printToPDF({pageSize:{width:width/25.4,height:bounds.height/96+1/25.4},margins:{top:0,bottom:0,left:0,right:0}});
+      assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,1);
+    }
+  }
   receipt.destroy(); clearTimeout(watchdog);
   console.log('PRINT RENDER PASS: settings/preload, persisted selection, receipt document and PDF; output:',output);
   app.exit(0);
